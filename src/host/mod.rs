@@ -1,5 +1,3 @@
-#[cfg(test)]
-use std::sync::MutexGuard;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Mutex, OnceLock};
 
@@ -8,7 +6,7 @@ use crate::error::HOST_ERR_NOT_FOUND;
 use crate::error::{HostError, host_error};
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) trait TestHostBackend: Send {
+pub(crate) trait HostBackend: Send {
     fn get_config(&mut self, _buf: &mut [u8]) -> i32 {
         HOST_ERR_NOT_FOUND
     }
@@ -80,49 +78,18 @@ pub(crate) trait TestHostBackend: Send {
 struct DefaultHostBackend;
 
 #[cfg(not(target_arch = "wasm32"))]
-impl TestHostBackend for DefaultHostBackend {}
+impl HostBackend for DefaultHostBackend {}
 
 #[cfg(not(target_arch = "wasm32"))]
-fn backend() -> &'static Mutex<Box<dyn TestHostBackend>> {
-    static BACKEND: OnceLock<Mutex<Box<dyn TestHostBackend>>> = OnceLock::new();
+fn backend() -> &'static Mutex<Box<dyn HostBackend>> {
+    static BACKEND: OnceLock<Mutex<Box<dyn HostBackend>>> = OnceLock::new();
     BACKEND.get_or_init(|| Mutex::new(Box::new(DefaultHostBackend)))
 }
 
 #[cfg(test)]
-fn test_backend_lock() -> &'static Mutex<()> {
-    static TEST_BACKEND_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    TEST_BACKEND_LOCK.get_or_init(|| Mutex::new(()))
-}
-
+mod test_support;
 #[cfg(test)]
-pub(crate) struct TestHostGuard {
-    previous: Option<Box<dyn TestHostBackend>>,
-    _lock: MutexGuard<'static, ()>,
-}
-
-#[cfg(test)]
-impl Drop for TestHostGuard {
-    fn drop(&mut self) {
-        if let Some(previous) = self.previous.take() {
-            *backend().lock().expect("host mutex poisoned") = previous;
-        }
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn install_test_backend(next: Box<dyn TestHostBackend>) -> TestHostGuard {
-    let lock = test_backend_lock()
-        .lock()
-        .expect("test backend lock poisoned");
-    let mut current = backend().lock().expect("host mutex poisoned");
-    let previous = std::mem::replace(&mut *current, next);
-    drop(current);
-
-    TestHostGuard {
-        previous: Some(previous),
-        _lock: lock,
-    }
-}
+pub(crate) use test_support::{TestHostBackend, install_test_backend};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
