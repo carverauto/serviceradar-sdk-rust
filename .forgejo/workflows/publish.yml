@@ -1,0 +1,33 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: docker
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@v4
+      - name: Install Rust toolchain
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+      - name: Verify tag matches crate version
+        run: |
+          tag="$(git describe --tags --exact-match)"
+          version="$(sed -n 's/^version = \"\\(.*\\)\"$/\\1/p' Cargo.toml | head -n 1)"
+          if [ "${tag#v}" != "$version" ]; then
+            echo "tag $tag does not match crate version $version"
+            exit 1
+          fi
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.crates }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "Forgejo secret 'crates' is not configured"
+            exit 1
+          fi
+          . "$HOME/.cargo/env"
+          cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
