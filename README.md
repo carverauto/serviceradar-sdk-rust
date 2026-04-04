@@ -109,6 +109,6 @@ Crate publishing is automated in Forgejo Actions. To publish a release:
 
 1. Update `version` in `Cargo.toml`.
 2. Push the commit to `main`.
-3. Create and push a matching tag such as `v0.1.3`.
+3. Create and push a matching tag such as `v0.1.4`.
 
 The publish workflow verifies that the tag matches the crate version and then runs `cargo publish`. Configure the Forgejo repository secret `crates` with a crates.io API token before using the release workflow.
