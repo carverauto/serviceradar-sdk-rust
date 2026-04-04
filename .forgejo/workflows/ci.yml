@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: docker
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@v4
+      - name: Install Rust toolchain
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+          . "$HOME/.cargo/env"
+          rustup component add clippy rustfmt
+          rustup target add wasm32-unknown-unknown
+      - name: Check formatting
+        run: |
+          . "$HOME/.cargo/env"
+          cargo fmt --check
+      - name: Run clippy
+        run: |
+          . "$HOME/.cargo/env"
+          cargo clippy --all-targets -- -D warnings
+      - name: Run tests
+        run: |
+          . "$HOME/.cargo/env"
+          cargo test --all-targets
+      - name: Build examples
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --examples
+      - name: Build wasm examples
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --examples --target wasm32-unknown-unknown
+      - name: Verify publish package
+        run: |
+          . "$HOME/.cargo/env"
+          cargo publish --dry-run --locked

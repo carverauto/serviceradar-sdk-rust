@@ -18,7 +18,7 @@ This repository is currently in bootstrap state. `openspec/project.md` should de
 - Rust crate managed with Cargo
 - WebAssembly target for ServiceRadar plugins, mirroring the Go SDK's WASI/TinyGo deployment model
 - JSON-based payloads for config, results, requests, and host responses
-- GitHub Actions CI expected for test and WASM build verification
+- Forgejo Actions CI/CD expected for test, packaging, and WASM build verification
 - Go SDK at `/Users/mfreeman/src/serviceradar-sdk-go` is the reference implementation for API coverage and behavior
 
 Planned capability areas, based on the Go SDK layout:
@@ -98,4 +98,4 @@ Important domain concepts:
   - `serviceradar.plugin_inputs.v1`
 - OCSF event model used for emitted events
 - Reference implementation in `/Users/mfreeman/src/serviceradar-sdk-go`
-- GitHub Actions for CI, following the Go SDK pattern of unit tests plus WASM example build checks
+- Forgejo Actions for CI/CD, including unit tests, crate packaging checks, and WASM example build checks

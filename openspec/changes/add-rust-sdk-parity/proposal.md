@@ -16,4 +16,4 @@ Without this change, Rust plugin development has no supported path for host conf
 
 ## Impact
 - Affected specs: `rust-sdk`
-- Affected code: Cargo crate, `src/` modules, examples, tests, GitHub Actions, README/docs
+- Affected code: Cargo crate, `src/` modules, examples, tests, Forgejo Actions, README/docs

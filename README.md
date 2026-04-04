@@ -101,4 +101,14 @@ Run the unit tests:
 cargo test
 ```
 
-The repository CI also builds the examples for `wasm32-unknown-unknown`.
+The repository CI runs `fmt`, `clippy`, tests, native example builds, wasm example builds, and `cargo publish --dry-run`.
+
+## Release
+
+Crate publishing is automated in Forgejo Actions. To publish a release:
+
+1. Update `version` in `Cargo.toml`.
+2. Push the commit to `main`.
+3. Create and push a matching tag such as `v0.1.0`.
+
+The publish workflow verifies that the tag matches the crate version and then runs `cargo publish`. Configure the Forgejo repository secret `crates` with a crates.io API token before using the release workflow.
