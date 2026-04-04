@@ -15,7 +15,11 @@ jobs:
           curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
       - name: Verify tag matches crate version
         run: |
-          tag="$(git describe --tags --exact-match)"
+          tag="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-}}"
+          if [ -z "$tag" ]; then
+            echo "No tag ref name was provided by the Forgejo runner"
+            exit 1
+          fi
           version="$(sed -n 's/^version = \"\\(.*\\)\"$/\\1/p' Cargo.toml | head -n 1)"
           if [ "${tag#v}" != "$version" ]; then
             echo "tag $tag does not match crate version $version"
