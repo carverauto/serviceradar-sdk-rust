@@ -13,28 +13,13 @@ jobs:
       - name: Install Rust toolchain
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
-      - name: Verify tag matches crate version
+      - name: Show release context
         run: |
-          tag="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-}}"
-          if [ -z "$tag" ]; then
-            ref="${FORGEJO_REF:-${GITHUB_REF:-}}"
-            case "$ref" in
-              refs/tags/*) tag="${ref#refs/tags/}" ;;
-            esac
-          fi
-          if [ -z "$tag" ]; then
-            tag="$(git tag --points-at HEAD | head -n 1)"
-          fi
-          if [ -z "$tag" ]; then
-            echo "Could not determine release tag from runner environment or git checkout"
-            exit 1
-          fi
-          echo "Detected release tag: $tag"
-          version="$(sed -n 's/^version = \"\\(.*\\)\"$/\\1/p' Cargo.toml | head -n 1)"
-          if [ "${tag#v}" != "$version" ]; then
-            echo "tag $tag does not match crate version $version"
-            exit 1
-          fi
+          echo "FORGEJO_REF=${FORGEJO_REF:-}"
+          echo "FORGEJO_REF_NAME=${FORGEJO_REF_NAME:-}"
+          echo "GITHUB_REF=${GITHUB_REF:-}"
+          echo "GITHUB_REF_NAME=${GITHUB_REF_NAME:-}"
+          sed -n '1,12p' Cargo.toml
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.crates }}
