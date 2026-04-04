@@ -1,0 +1,33 @@
+[package]
+name = "serviceradar-sdk-rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "serviceradar_sdk_rust"
+crate-type = ["rlib", "cdylib"]
+
+[[example]]
+name = "http-check"
+path = "examples/http-check/src/main.rs"
+
+[[example]]
+name = "tcp-check"
+path = "examples/tcp-check/src/main.rs"
+
+[[example]]
+name = "udp-check"
+path = "examples/udp-check/src/main.rs"
+
+[[example]]
+name = "widgets-check"
+path = "examples/widgets-check/src/main.rs"
+
+[dependencies]
+base64 = "0.22"
+humantime = "2.2"
+md5 = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+time = { version = "0.3", features = ["formatting"] }
+url = "2.5"
