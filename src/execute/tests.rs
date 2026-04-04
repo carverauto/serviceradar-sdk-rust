@@ -88,6 +88,7 @@ fn execute_converts_errors_into_critical_results_and_logs() {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn execute_upgrades_partial_result_on_error() {
     let state = Arc::new(Mutex::new(ExecuteState::default()));
     let _guard = install_test_backend(Box::new(ExecuteHost {
