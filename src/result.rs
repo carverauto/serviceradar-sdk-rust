@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
+use crate::device_discovery::DeviceDiscovery;
 use crate::error::SdkResult;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -363,6 +364,8 @@ pub struct Result {
     alert_hint: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     condition_id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    device_discovery: Vec<DeviceDiscovery>,
 }
 
 impl Result {
@@ -380,6 +383,7 @@ impl Result {
             events: Vec::new(),
             alert_hint: false,
             condition_id: None,
+            device_discovery: Vec::new(),
         }
     }
 
@@ -431,6 +435,10 @@ impl Result {
 
     pub fn events(&self) -> &[OcsfEvent] {
         &self.events
+    }
+
+    pub fn device_discovery(&self) -> &[DeviceDiscovery] {
+        &self.device_discovery
     }
 
     pub fn set_status(&mut self, status: Status) {
@@ -665,6 +673,15 @@ impl Result {
         self
     }
 
+    pub fn add_device_discovery(&mut self, discovery: DeviceDiscovery) {
+        self.device_discovery.push(discovery);
+    }
+
+    pub fn with_device_discovery(mut self, discovery: DeviceDiscovery) -> Self {
+        self.add_device_discovery(discovery);
+        self
+    }
+
     pub fn request_immediate_alert(&mut self, condition_id: impl Into<String>) {
         self.alert_hint = true;
         self.condition_id = Some(condition_id.into());
@@ -714,7 +731,17 @@ impl Result {
             events: self.events.clone(),
             alert_hint: self.alert_hint,
             condition_id: self.condition_id.clone(),
+            device_discovery: self.device_discovery.clone(),
         })
+    }
+}
+
+impl Extend<DeviceDiscovery> for Result {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = DeviceDiscovery>,
+    {
+        self.device_discovery.extend(iter);
     }
 }
 
@@ -746,6 +773,8 @@ struct SerializableResult {
     alert_hint: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     condition_id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    device_discovery: Vec<DeviceDiscovery>,
 }
 
 const OCSF_CLASS_EVENT_LOG_ACTIVITY: i32 = 1008;

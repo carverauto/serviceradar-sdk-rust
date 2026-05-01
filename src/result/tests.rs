@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use super::{DisplayWidget, Metric, OcsfEvent, Result, Severity, Status, ThresholdSpec};
+use crate::{DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice};
 
 #[test]
 fn serialize_includes_metrics_and_events() {
@@ -166,4 +167,51 @@ fn domain_type_constructors_build_expected_shapes() {
 
     let event = OcsfEvent::log_activity("camera alert", Severity::Critical);
     assert_eq!(event.message.as_deref(), Some("camera alert"));
+}
+
+#[test]
+fn serialize_includes_device_discovery() {
+    let location = DeviceLocation::at(0.0, 0.0)
+        .with_site_code("SITE01")
+        .with_site_name("Example City");
+
+    let device = DiscoveredDevice::named("SITE01-MDF001-WAP001")
+        .with_serial("SN0000000001")
+        .with_device_type("access_point")
+        .with_location(location)
+        .with_label("site", "SITE01")
+        .with_metadata("radio_count", 2);
+
+    let payload = Result::ok("discovered 1 device")
+        .with_device_discovery(DeviceDiscovery::new("example-network-map").with_device(device))
+        .serialize()
+        .expect("serialize result");
+
+    let decoded: Value = serde_json::from_slice(&payload).expect("decode result");
+
+    assert_eq!(
+        decoded["device_discovery"][0]["schema"],
+        DEVICE_DISCOVERY_SCHEMA_V1
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["hostname"],
+        "SITE01-MDF001-WAP001"
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["type"],
+        "access_point"
+    );
+    assert!(
+        decoded["device_discovery"][0]["devices"][0]
+            .get("device_type")
+            .is_none()
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["location"]["site_code"],
+        "SITE01"
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["metadata"]["radio_count"],
+        2
+    );
 }
