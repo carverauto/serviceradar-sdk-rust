@@ -12,6 +12,7 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Host-proxied HTTP, TCP, UDP, and WebSocket helpers
 - Policy input parsing and validation for `serviceradar.plugin_inputs.v1`
 - Camera/media helpers and RTSP parsing/depacketization utilities
+- Device discovery/enrichment payload helpers for inventory-producing plugins
 - Example plugins for HTTP, TCP, UDP, and widget-rich results
 
 The Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go` remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
@@ -92,6 +93,39 @@ Build WebAssembly examples:
 rustup target add wasm32-unknown-unknown
 cargo build --examples --target wasm32-unknown-unknown
 ```
+
+## Device Discovery
+
+Plugins can emit `serviceradar.device_discovery.v1` envelopes inside the normal
+plugin-result payload. Core ingests these records through the device discovery
+handler and reconciles them into `ocsf_devices`.
+
+```rust
+use serviceradar_sdk_rust as sdk;
+
+let location = sdk::DeviceLocation::at(29.9844, -95.3414)
+    .with_site_code("IAH")
+    .with_site_name("Houston");
+
+let device = sdk::DiscoveredDevice::named("NIAHAP-MDF001-WAP001")
+    .with_serial("CNC3HN77NW")
+    .with_device_type("access_point")
+    .with_location(location)
+    .with_label("site", "IAH")
+    .with_metadata("radio_count", 2);
+
+let result = sdk::PluginResult::ok("discovered 1 device").with_device_discovery(
+    sdk::DeviceDiscovery::new("ual-network-map").with_device(device),
+);
+
+let payload = result.serialize()?;
+# Ok::<_, sdk::Error>(())
+```
+
+The discovery structs are public and serde-native, so collectors can also build
+them with struct literals or mutate them incrementally with `push_device`,
+`add_device_discovery`, and `Extend` while processing streams of discovered
+assets.
 
 ## Verification
 

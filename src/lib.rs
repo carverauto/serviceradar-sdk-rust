@@ -3,6 +3,7 @@ mod camera_media;
 mod camera_plugin;
 mod camera_relay;
 mod config;
+mod device_discovery;
 mod error;
 mod execute;
 mod host;
@@ -24,6 +25,9 @@ pub use camera_plugin::{
 };
 pub use camera_relay::{CameraRelayConfig, with_url_user_info};
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
+pub use device_discovery::{
+    DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice,
+};
 pub use error::{
     Error, HOST_ERR_BAD_HANDLE, HOST_ERR_DENIED, HOST_ERR_INTERNAL, HOST_ERR_INVALID,
     HOST_ERR_NOT_FOUND, HOST_ERR_OK, HOST_ERR_TIMEOUT, HOST_ERR_TOO_LARGE, HostError,
