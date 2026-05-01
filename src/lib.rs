@@ -15,7 +15,7 @@ fn device_discovery_schema_v1() -> String {
     DEVICE_DISCOVERY_SCHEMA_V1.to_owned()
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct PluginResult {
     pub status: String,
     pub summary: String,
@@ -330,6 +330,13 @@ mod tests {
             encoded["device_discovery"][0]["devices"][0]["hostname"],
             "NIAHAP-MDF001-WAP001"
         );
+        assert_eq!(
+            encoded["device_discovery"][0]["devices"][0]["type"],
+            "access_point"
+        );
+        assert!(encoded["device_discovery"][0]["devices"][0]
+            .get("device_type")
+            .is_none());
     }
 
     #[test]
