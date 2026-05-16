@@ -1,3 +1,4 @@
+mod action;
 mod camera_http;
 mod camera_media;
 mod camera_plugin;
@@ -17,6 +18,11 @@ mod tcp;
 mod udp;
 mod websocket;
 
+pub use action::{
+    ACTION_INVOCATION_SCHEMA_V1, ACTION_RESULT_SCHEMA_V1, ActionDescriptor, ActionHostConfig,
+    ActionInvocation, ActionResult, ActionSafety, ActionScope, ActionStatus, ActionTargetResult,
+    ActionTargetSnapshot, load_action_config, parse_action_config, submit_action_result,
+};
 pub use camera_http::CameraHttpClient;
 pub use camera_media::{MediaChunk, MediaHeartbeat, MediaOpenRequest, MediaStream};
 pub use camera_plugin::{
