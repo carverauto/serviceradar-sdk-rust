@@ -27,19 +27,14 @@ pub enum ActionSafety {
     Destructive,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionStatus {
+    #[default]
     Succeeded,
     Failed,
     Skipped,
     Suppressed,
-}
-
-impl Default for ActionStatus {
-    fn default() -> Self {
-        Self::Succeeded
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
