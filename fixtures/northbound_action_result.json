@@ -1,0 +1,23 @@
+{
+  "schema": "serviceradar.northbound_action_result.v1",
+  "status": "succeeded",
+  "summary": {
+    "message": "Disabled switch port"
+  },
+  "external_correlation_id": "hpna-job-123",
+  "targets": [
+    {
+      "device_uid": "sr:device-1",
+      "interface_uid": "if-1",
+      "status": "succeeded",
+      "result": {
+        "changed": true,
+        "command": "disable interface"
+      },
+      "external_correlation_id": "hpna-job-123"
+    }
+  ],
+  "metadata": {
+    "provider": "hpna"
+  }
+}
