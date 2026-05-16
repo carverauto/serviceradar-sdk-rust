@@ -1,0 +1,37 @@
+{
+  "schema": "serviceradar.northbound_action_invocation.v1",
+  "invocation_id": "inv-123",
+  "provider_id": "provider-123",
+  "descriptor_id": "descriptor-123",
+  "action_id": "hpna.disable_port",
+  "action_version": "1.0.0",
+  "descriptor_hash": "sha256:example",
+  "result_schema_version": "serviceradar.northbound_action_result.v1",
+  "plugin_assignment_id": "assignment-123",
+  "plugin_package_id": "package-123",
+  "targets": [
+    {
+      "kind": "interface",
+      "device_uid": "sr:device-1",
+      "device_name": "core-sw01",
+      "device_ip": "10.0.0.1",
+      "device_agent_id": "agent-core-1",
+      "device_gateway_id": "gateway-core-1",
+      "interface_uid": "if-1",
+      "if_index": 10101,
+      "if_name": "Gi1/0/1",
+      "if_alias": "camera uplink",
+      "if_oper_status": "up"
+    }
+  ],
+  "input_values": {
+    "reason": "RADIUS auth failure"
+  },
+  "redacted_input_values": {
+    "reason": "RADIUS auth failure"
+  },
+  "requested_at": "2026-05-15T23:00:00Z",
+  "metadata": {
+    "dispatch_agent_id": "agent-core-1"
+  }
+}
