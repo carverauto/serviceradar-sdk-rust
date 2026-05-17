@@ -2,8 +2,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    ACTION_RESULT_SCHEMA_V1, ActionDescriptor, ActionPollMode, ActionResult, ActionSafety,
-    ActionScope, ActionStatus, ActionTargetResult, parse_action_config,
+    ACTION_RESULT_SCHEMA_V1, ActionCallbackAuthMode, ActionDescriptor, ActionPollMode,
+    ActionResult, ActionSafety, ActionScope, ActionStatus, ActionTargetResult, parse_action_config,
 };
 
 #[test]
@@ -57,7 +57,15 @@ fn parse_action_config_extracts_invocation_and_plugin_config() {
                         "path": "/api/northbound/action-callbacks/job-1",
                         "url": "https://service.example/api/northbound/action-callbacks/job-1",
                         "token": "callback-token",
-                        "token_header": "x-serviceradar-callback-token"
+                        "token_header": "x-serviceradar-callback-token",
+                        "auth_mode": "hmac_required",
+                        "signature_algorithm": "hmac-sha256",
+                        "signature_header": "x-serviceradar-callback-signature",
+                        "timestamp_header": "x-serviceradar-callback-timestamp",
+                        "signature_format": "sha256=<hex>",
+                        "signed_payload": "<timestamp>.<raw_body>",
+                        "timestamp_tolerance_seconds": 300,
+                        "signing_secret": "callback-signing-secret"
                     },
                     "device_uid": "sr:device-1",
                     "device_ip": "10.0.0.1",
@@ -105,6 +113,17 @@ fn parse_action_config_extracts_invocation_and_plugin_config() {
         Some("https://service.example/api/northbound/action-callbacks/job-1")
     );
     assert_eq!(
+        config.action_invocation.targets[0].callback.auth_mode,
+        Some(ActionCallbackAuthMode::HmacRequired)
+    );
+    assert_eq!(
+        config.action_invocation.targets[0]
+            .callback
+            .signature_header
+            .as_deref(),
+        Some("x-serviceradar-callback-signature")
+    );
+    assert_eq!(
         config.action_invocation.targets[0]
             .if_admin_status
             .as_deref(),
@@ -124,6 +143,35 @@ fn parse_action_config_extracts_invocation_and_plugin_config() {
 
     let plugin_config: PluginConfig = config.decode_plugin_config().expect("plugin config");
     assert_eq!(plugin_config.api_url, "https://ncm.example");
+}
+
+#[test]
+fn action_callback_signs_body() {
+    let config = parse_action_config(
+        br#"{
+            "action_invocation": {
+                "invocation_id": "inv-1",
+                "action_id": "test",
+                "targets": [{
+                    "kind": "device",
+                    "callback": {
+                        "signing_secret": "secret"
+                    }
+                }]
+            }
+        }"#,
+    )
+    .expect("parse config");
+
+    let signature = config.action_invocation.targets[0]
+        .callback
+        .sign("1715900000", br#"{"status":"succeeded"}"#)
+        .expect("signature");
+
+    assert_eq!(
+        signature,
+        "sha256=8ba05ab666dfb810e975ed35a1d9835252219a826f1a97e17f2f985e79dc3dd1"
+    );
 }
 
 #[test]
