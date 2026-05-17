@@ -1,6 +1,8 @@
+use hmac::{Hmac, Mac};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
+use sha2::Sha256;
 
 use crate::{Error, SdkResult, get_config_bytes, submit_result_payload};
 
@@ -48,6 +50,14 @@ pub enum ActionPollMode {
     Webhook,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionCallbackAuthMode {
+    Token,
+    HmacOptional,
+    HmacRequired,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct ActionCallback {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -60,6 +70,40 @@ pub struct ActionCallback {
     pub token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_header: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_mode: Option<ActionCallbackAuthMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_algorithm: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_header: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_header: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_payload: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_tolerance_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing_secret: Option<String>,
+}
+
+impl ActionCallback {
+    pub fn sign(&self, timestamp: &str, body: &[u8]) -> Option<String> {
+        self.signing_secret
+            .as_deref()
+            .map(|secret| sign_action_callback(secret, timestamp, body))
+    }
+}
+
+pub fn sign_action_callback(secret: &str, timestamp: &str, body: &[u8]) -> String {
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts keys of any size");
+    mac.update(timestamp.as_bytes());
+    mac.update(b".");
+    mac.update(body);
+
+    format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

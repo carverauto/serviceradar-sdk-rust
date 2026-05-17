@@ -19,7 +19,15 @@
         "path": "/api/northbound/action-callbacks/target-123",
         "url": "https://demo.serviceradar.cloud/api/northbound/action-callbacks/target-123",
         "token": "example-callback-token",
-        "token_header": "x-serviceradar-callback-token"
+        "token_header": "x-serviceradar-callback-token",
+        "auth_mode": "hmac_required",
+        "signature_algorithm": "hmac-sha256",
+        "signature_header": "x-serviceradar-callback-signature",
+        "timestamp_header": "x-serviceradar-callback-timestamp",
+        "signature_format": "sha256=<hex>",
+        "signed_payload": "<timestamp>.<raw_body>",
+        "timestamp_tolerance_seconds": 300,
+        "signing_secret": "example-callback-signing-secret"
       },
       "device_uid": "sr:device-1",
       "device_name": "core-sw01",
