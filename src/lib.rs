@@ -19,9 +19,10 @@ mod udp;
 mod websocket;
 
 pub use action::{
-    ACTION_INVOCATION_SCHEMA_V1, ACTION_RESULT_SCHEMA_V1, ActionDescriptor, ActionHostConfig,
-    ActionInvocation, ActionResult, ActionSafety, ActionScope, ActionStatus, ActionTargetResult,
-    ActionTargetSnapshot, load_action_config, parse_action_config, submit_action_result,
+    ACTION_INVOCATION_SCHEMA_V1, ACTION_RESULT_SCHEMA_V1, ActionCallback, ActionDescriptor,
+    ActionHostConfig, ActionInvocation, ActionPollMode, ActionResult, ActionSafety, ActionScope,
+    ActionStatus, ActionTargetResult, ActionTargetSnapshot, load_action_config,
+    parse_action_config, submit_action_result,
 };
 pub use camera_http::CameraHttpClient;
 pub use camera_media::{MediaChunk, MediaHeartbeat, MediaOpenRequest, MediaStream};
