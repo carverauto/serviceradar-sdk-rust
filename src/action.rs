@@ -1,5 +1,5 @@
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{Error, SdkResult, get_config_bytes, submit_result_payload};
@@ -35,6 +35,31 @@ pub enum ActionStatus {
     Failed,
     Skipped,
     Suppressed,
+    Deferred,
+    Polling,
+    ResultFetching,
+    Expired,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionPollMode {
+    Poll,
+    Webhook,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ActionCallback {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_header: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -134,7 +159,11 @@ pub struct ActionInvocation {
     #[serde(rename = "schema", default)]
     pub schema_version: Option<String>,
     #[serde(default)]
+    pub phase: Option<String>,
+    #[serde(default)]
     pub invocation_id: String,
+    #[serde(default)]
+    pub invocation_target_id: Option<String>,
     #[serde(default)]
     pub provider_id: Option<String>,
     #[serde(default)]
@@ -158,6 +187,12 @@ pub struct ActionInvocation {
     #[serde(default)]
     pub redacted_input_values: Map<String, Value>,
     #[serde(default)]
+    pub continuation_state: Map<String, Value>,
+    #[serde(default)]
+    pub external_correlation_id: Option<String>,
+    #[serde(default)]
+    pub poll_attempt_count: u32,
+    #[serde(default)]
     pub requested_at: Option<String>,
     #[serde(default)]
     pub metadata: Map<String, Value>,
@@ -167,6 +202,10 @@ pub struct ActionInvocation {
 pub struct ActionTargetSnapshot {
     #[serde(default)]
     pub kind: String,
+    #[serde(default)]
+    pub northbound_job_id: Option<String>,
+    #[serde(default)]
+    pub callback: ActionCallback,
     #[serde(default)]
     pub device_uid: Option<String>,
     #[serde(default)]
@@ -215,9 +254,9 @@ pub struct ActionTargetSnapshot {
     pub if_phys_address: Option<String>,
     #[serde(default)]
     pub ip_addresses: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_interface_status")]
     pub if_admin_status: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_interface_status")]
     pub if_oper_status: Option<String>,
     #[serde(default)]
     pub if_type_name: Option<String>,
@@ -234,6 +273,29 @@ pub struct ActionTargetSnapshot {
 impl ActionTargetSnapshot {
     pub fn address(&self) -> Option<&str> {
         self.ip.as_deref().or(self.device_ip.as_deref())
+    }
+}
+
+fn deserialize_interface_status<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+
+    Ok(value.and_then(|value| match value {
+        Value::Null => None,
+        Value::String(value) => Some(normalize_interface_status(&value)),
+        Value::Number(value) => Some(normalize_interface_status(&value.to_string())),
+        value => Some(value.to_string()),
+    }))
+}
+
+fn normalize_interface_status(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" => "up".to_string(),
+        "2" => "down".to_string(),
+        "3" => "testing".to_string(),
+        _ => value.trim().to_string(),
     }
 }
 
@@ -283,6 +345,18 @@ pub struct ActionResult {
     pub summary: Map<String, Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_correlation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub continuation_state: Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_mode: Option<ActionPollMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_poll_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_poll_delay_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_deadline_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_duration_seconds: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<ActionTargetResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -300,6 +374,12 @@ impl ActionResult {
             status,
             summary: Map::new(),
             external_correlation_id: None,
+            continuation_state: Map::new(),
+            poll_mode: None,
+            next_poll_at: None,
+            next_poll_delay_seconds: None,
+            poll_deadline_at: None,
+            max_duration_seconds: None,
             targets: Vec::new(),
             error_class: None,
             error_message: None,
@@ -315,6 +395,18 @@ impl ActionResult {
         Self::new(ActionStatus::Failed).with_error(class, message)
     }
 
+    pub fn deferred(message: impl Into<String>) -> Self {
+        Self::new(ActionStatus::Deferred).with_summary("message", message.into())
+    }
+
+    pub fn polling(message: impl Into<String>) -> Self {
+        Self::new(ActionStatus::Polling).with_summary("message", message.into())
+    }
+
+    pub fn result_fetching(message: impl Into<String>) -> Self {
+        Self::new(ActionStatus::ResultFetching).with_summary("message", message.into())
+    }
+
     pub fn with_summary(mut self, key: impl Into<String>, value: impl Into<Value>) -> Self {
         let key = key.into();
         if !key.is_empty() {
@@ -325,6 +417,40 @@ impl ActionResult {
 
     pub fn with_correlation_id(mut self, id: impl Into<String>) -> Self {
         self.external_correlation_id = Some(id.into());
+        self
+    }
+
+    pub fn with_continuation_state(mut self, state: Map<String, Value>) -> Self {
+        self.continuation_state = state;
+        self
+    }
+
+    pub fn with_poll_mode(mut self, mode: ActionPollMode) -> Self {
+        self.poll_mode = Some(mode);
+        self
+    }
+
+    pub fn with_webhook_callback(self) -> Self {
+        self.with_poll_mode(ActionPollMode::Webhook)
+    }
+
+    pub fn with_next_poll_delay(mut self, seconds: u32) -> Self {
+        self.next_poll_delay_seconds = Some(seconds);
+        self
+    }
+
+    pub fn with_next_poll_at(mut self, timestamp: impl Into<String>) -> Self {
+        self.next_poll_at = Some(timestamp.into());
+        self
+    }
+
+    pub fn with_poll_deadline_at(mut self, timestamp: impl Into<String>) -> Self {
+        self.poll_deadline_at = Some(timestamp.into());
+        self
+    }
+
+    pub fn with_max_duration(mut self, seconds: u32) -> Self {
+        self.max_duration_seconds = Some(seconds);
         self
     }
 
@@ -359,6 +485,18 @@ pub struct ActionTargetResult {
     pub result: Map<String, Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_correlation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub continuation_state: Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_mode: Option<ActionPollMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_poll_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_poll_delay_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_deadline_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_duration_seconds: Option<u32>,
 }
 
 impl ActionTargetResult {
@@ -389,6 +527,45 @@ impl ActionTargetResult {
         if !key.is_empty() {
             self.result.insert(key, value.into());
         }
+        self
+    }
+
+    pub fn with_correlation_id(mut self, id: impl Into<String>) -> Self {
+        self.external_correlation_id = Some(id.into());
+        self
+    }
+
+    pub fn with_continuation_state(mut self, state: Map<String, Value>) -> Self {
+        self.continuation_state = state;
+        self
+    }
+
+    pub fn with_poll_mode(mut self, mode: ActionPollMode) -> Self {
+        self.poll_mode = Some(mode);
+        self
+    }
+
+    pub fn with_webhook_callback(self) -> Self {
+        self.with_poll_mode(ActionPollMode::Webhook)
+    }
+
+    pub fn with_next_poll_delay(mut self, seconds: u32) -> Self {
+        self.next_poll_delay_seconds = Some(seconds);
+        self
+    }
+
+    pub fn with_next_poll_at(mut self, timestamp: impl Into<String>) -> Self {
+        self.next_poll_at = Some(timestamp.into());
+        self
+    }
+
+    pub fn with_poll_deadline_at(mut self, timestamp: impl Into<String>) -> Self {
+        self.poll_deadline_at = Some(timestamp.into());
+        self
+    }
+
+    pub fn with_max_duration(mut self, seconds: u32) -> Self {
+        self.max_duration_seconds = Some(seconds);
         self
     }
 }
