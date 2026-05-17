@@ -86,3 +86,16 @@ The Rust SDK SHALL include example plugins and automated verification that the S
 - **WHEN** repository CI runs for the Rust SDK
 - **THEN** it executes native tests
 - **AND** it verifies that example plugins build for the supported Rust WebAssembly target
+
+### Requirement: The Rust SDK SHALL support northbound action async contracts
+The Rust SDK SHALL provide typed support for ServiceRadar northbound action invocation and result payloads, including deferred polling and webhook callback metadata.
+
+#### Scenario: A plugin decodes callback metadata
+- **WHEN** a Rust plugin decodes a `serviceradar.northbound_action_invocation.v1` payload
+- **THEN** the SDK exposes per-target `northbound_job_id` and callback URL/token metadata
+- **AND** poll invocations expose phase, invocation target ID, continuation state, external correlation ID, and poll attempt count
+
+#### Scenario: A plugin returns deferred webhook mode
+- **WHEN** a Rust plugin returns a deferred action result for a webhook-capable external system
+- **THEN** the SDK serializes `poll_mode: webhook`
+- **AND** the result shape remains compatible with the Go SDK northbound action contract

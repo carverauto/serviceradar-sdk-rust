@@ -1,5 +1,6 @@
 {
   "schema": "serviceradar.northbound_action_invocation.v1",
+  "phase": "launch",
   "invocation_id": "inv-123",
   "provider_id": "provider-123",
   "descriptor_id": "descriptor-123",
@@ -12,6 +13,14 @@
   "targets": [
     {
       "kind": "interface",
+      "northbound_job_id": "target-123",
+      "callback": {
+        "job_id": "target-123",
+        "path": "/api/northbound/action-callbacks/target-123",
+        "url": "https://demo.serviceradar.cloud/api/northbound/action-callbacks/target-123",
+        "token": "example-callback-token",
+        "token_header": "x-serviceradar-callback-token"
+      },
       "device_uid": "sr:device-1",
       "device_name": "core-sw01",
       "device_ip": "10.0.0.1",
