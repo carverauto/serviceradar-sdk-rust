@@ -8,6 +8,7 @@ use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::SdkResult;
+use crate::plugin_inputs::TargetContext;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -363,6 +364,12 @@ pub struct Result {
     alert_hint: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     condition_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check_instance_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    monitored_service_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_uid: Option<String>,
 }
 
 impl Result {
@@ -380,6 +387,9 @@ impl Result {
             events: Vec::new(),
             alert_hint: false,
             condition_id: None,
+            check_instance_id: None,
+            monitored_service_id: None,
+            device_uid: None,
         }
     }
 
@@ -402,6 +412,13 @@ impl Result {
     pub fn unknown(summary: impl Into<String>) -> Self {
         Self::new()
             .with_status(Status::Unknown)
+            .with_summary(summary)
+    }
+
+    pub fn target(ctx: &TargetContext, status: Status, summary: impl Into<String>) -> Self {
+        Self::new()
+            .for_target(ctx)
+            .with_status(status)
             .with_summary(summary)
     }
 
@@ -484,6 +501,22 @@ impl Result {
 
     pub fn with_observed_at(mut self, observed_at: impl Into<String>) -> Self {
         self.set_observed_at(observed_at);
+        self
+    }
+
+    pub fn for_target(mut self, ctx: &TargetContext) -> Self {
+        self.check_instance_id = Some(ctx.check_instance_id.clone());
+        self.monitored_service_id = ctx.monitored_service_id().map(ToOwned::to_owned);
+        self.device_uid = ctx.device_uid().map(ToOwned::to_owned);
+        self.add_label("check_instance_id", ctx.check_instance_id.clone());
+
+        if !ctx.descriptor_id.is_empty() {
+            self.add_label("descriptor_id", ctx.descriptor_id.clone());
+        }
+        if !ctx.uid.is_empty() {
+            self.add_label("target_uid", ctx.uid.clone());
+        }
+
         self
     }
 
@@ -714,6 +747,9 @@ impl Result {
             events: self.events.clone(),
             alert_hint: self.alert_hint,
             condition_id: self.condition_id.clone(),
+            check_instance_id: self.check_instance_id.clone(),
+            monitored_service_id: self.monitored_service_id.clone(),
+            device_uid: self.device_uid.clone(),
         })
     }
 }
@@ -746,6 +782,12 @@ struct SerializableResult {
     alert_hint: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     condition_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check_instance_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    monitored_service_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_uid: Option<String>,
 }
 
 const OCSF_CLASS_EVENT_LOG_ACTIVITY: i32 = 1008;
