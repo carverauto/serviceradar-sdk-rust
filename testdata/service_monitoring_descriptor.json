@@ -1,0 +1,22 @@
+{
+  "descriptor_id": "http.url.availability",
+  "version": "1.0.0",
+  "label": "HTTP URL availability",
+  "target_kinds": ["service"],
+  "service_kinds": ["http"],
+  "protocols": ["http", "https"],
+  "required_target_fields": ["endpoint_url"],
+  "required_capabilities": ["http_request", "submit_result"],
+  "credential_requirements": {
+    "mode": "optional",
+    "purpose": "http_auth"
+  },
+  "timeout_bounds": {
+    "max_seconds": 30,
+    "min_seconds": 1
+  },
+  "allowlist_policy": {
+    "derive_from": ["target.host", "target.port", "target.path"]
+  },
+  "result_schema_version": "serviceradar.target_check_result.v1"
+}

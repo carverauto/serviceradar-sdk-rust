@@ -2,6 +2,7 @@ mod camera_http;
 mod camera_media;
 mod camera_plugin;
 mod camera_relay;
+mod check_descriptor;
 mod config;
 mod error;
 mod execute;
@@ -23,6 +24,9 @@ pub use camera_plugin::{
     default_camera_streaming_config, load_camera_plugin_config, load_camera_streaming_config,
 };
 pub use camera_relay::{CameraRelayConfig, with_url_user_info};
+pub use check_descriptor::{
+    CheckDescriptor, RESULT_SCHEMA_TARGET_CHECK_V1, TARGET_KIND_DEVICE, TARGET_KIND_SERVICE,
+};
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
 pub use error::{
     Error, HOST_ERR_BAD_HANDLE, HOST_ERR_DENIED, HOST_ERR_INTERNAL, HOST_ERR_INVALID,
@@ -34,7 +38,8 @@ pub use http::{HttpClient, HttpRequest, HttpResponse, MAX_HTTP_RESPONSE_BYTES};
 pub use log::{LOG, LogLevel, Logger};
 pub use memory::{alloc, dealloc};
 pub use plugin_inputs::{
-    PLUGIN_INPUTS_SCHEMA_V1, PluginInput, PluginInputItem, PluginInputItems, PluginInputsPayload,
+    CredentialBrokerGrant, CredentialPolicySnapshot, PLUGIN_INPUTS_SCHEMA_V1, PluginInput,
+    PluginInputItem, PluginInputItems, PluginInputsPayload, TargetContext,
     parse_plugin_inputs_json, parse_plugin_inputs_map,
 };
 pub use result::{Event, Metric, Result as PluginResult, Severity, Status, Thresholds, Widget};

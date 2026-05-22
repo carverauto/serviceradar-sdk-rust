@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
+use std::fs;
 
 use serde_json::Value;
+
+use crate::TargetContext;
 
 use super::{DisplayWidget, Metric, OcsfEvent, Result, Severity, Status, ThresholdSpec};
 
@@ -127,6 +130,49 @@ fn threshold_spec_builders_set_expected_values() {
 fn result_default_matches_new() {
     assert_eq!(Result::default().status(), Result::new().status());
     assert_eq!(Result::default().summary(), Result::new().summary());
+}
+
+#[test]
+fn target_result_serializes_check_instance_identity() {
+    let ctx = TargetContext {
+        uid: "check-1".to_string(),
+        check_instance_id: "check-1".to_string(),
+        check_key: None,
+        monitoring_binding_id: Some("binding-1".to_string()),
+        descriptor_id: "http.url.availability".to_string(),
+        descriptor_version: "1.0.0".to_string(),
+        target_kind: "service".to_string(),
+        target: BTreeMap::from([
+            (
+                "monitored_service_id".to_string(),
+                Value::String("service-1".to_string()),
+            ),
+            (
+                "device_uid".to_string(),
+                Value::String("sr:device-1".to_string()),
+            ),
+        ]),
+        credential_policy: Default::default(),
+        event_policy: BTreeMap::new(),
+    };
+
+    let payload = Result::target(&ctx, Status::Ok, "HTTP 200")
+        .serialize()
+        .expect("serialize target result");
+    let decoded: Value = serde_json::from_slice(&payload).expect("decode target result");
+
+    assert_eq!(decoded["check_instance_id"], "check-1");
+    assert_eq!(decoded["monitored_service_id"], "service-1");
+    assert_eq!(decoded["device_uid"], "sr:device-1");
+}
+
+#[test]
+fn service_monitoring_result_fixture_decodes() {
+    let raw = fs::read_to_string("testdata/service_monitoring_result.json").expect("fixture");
+    let decoded: Value = serde_json::from_str(&raw).expect("decode result fixture");
+
+    assert_eq!(decoded["check_instance_id"], "check-1");
+    assert_eq!(decoded["monitored_service_id"], "service-1");
 }
 
 #[test]
