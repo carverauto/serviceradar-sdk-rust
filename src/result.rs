@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::SdkResult;
@@ -337,6 +337,35 @@ impl OcsfEvent {
 pub type Thresholds = ThresholdSpec;
 pub type Widget = DisplayWidget;
 pub type Event = OcsfEvent;
+
+pub const SIGNAL_SCHEMA_METADATA_SERVICE_RADAR: &str = "service_radar";
+pub const SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA: &str = "signal_schema";
+pub const SIGNAL_SCHEMA_METADATA_PRODUCER_ID: &str = "producer_id";
+pub const SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION: &str = "producer_version";
+pub const SIGNAL_SCHEMA_METADATA_SCHEMA_ID: &str = "schema_id";
+pub const SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION: &str = "schema_version";
+pub const SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID: &str = "display_contract_id";
+pub const SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION: &str = "display_contract_version";
+pub const SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT: &str = "display_contract";
+pub const SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE: &str = "signal_type";
+pub const SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND: &str = "payload_kind";
+pub const SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT: &str = "event";
+pub const SIGNAL_SCHEMA_SIGNAL_TYPE_LOG: &str = "log";
+pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT: &str = "ocsf_event";
+pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG: &str = "otel_log";
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignalSchemaRef {
+    pub producer_id: String,
+    pub producer_version: String,
+    pub schema_id: String,
+    pub schema_version: String,
+    pub display_contract_id: String,
+    pub display_contract_version: String,
+    pub display_contract: String,
+    pub signal_type: String,
+    pub payload_kind: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Result {
@@ -751,6 +780,87 @@ impl Result {
             monitored_service_id: self.monitored_service_id.clone(),
             device_uid: self.device_uid.clone(),
         })
+    }
+}
+
+impl OcsfEvent {
+    pub fn attach_signal_schema_ref(&mut self, signal_schema: &SignalSchemaRef) {
+        attach_signal_schema_ref(self, signal_schema);
+    }
+
+    pub fn with_signal_schema_ref(mut self, signal_schema: &SignalSchemaRef) -> Self {
+        self.attach_signal_schema_ref(signal_schema);
+        self
+    }
+}
+
+pub fn attach_signal_schema_ref(event: &mut OcsfEvent, signal_schema: &SignalSchemaRef) {
+    let mut ref_metadata = Map::new();
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_PRODUCER_ID,
+        &signal_schema.producer_id,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION,
+        &signal_schema.producer_version,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_SCHEMA_ID,
+        &signal_schema.schema_id,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION,
+        &signal_schema.schema_version,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID,
+        &signal_schema.display_contract_id,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION,
+        &signal_schema.display_contract_version,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+        &signal_schema.display_contract,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE,
+        &signal_schema.signal_type,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND,
+        &signal_schema.payload_kind,
+    );
+
+    let service_radar = event
+        .metadata
+        .entry(SIGNAL_SCHEMA_METADATA_SERVICE_RADAR.to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !service_radar.is_object() {
+        *service_radar = Value::Object(Map::new());
+    }
+
+    if let Some(service_radar) = service_radar.as_object_mut() {
+        service_radar.insert(
+            SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA.to_string(),
+            Value::Object(ref_metadata),
+        );
+    }
+}
+
+fn put_signal_schema_field(metadata: &mut Map<String, Value>, key: &str, value: &str) {
+    if !value.is_empty() {
+        metadata.insert(key.to_string(), Value::String(value.to_string()));
     }
 }
 

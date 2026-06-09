@@ -5,7 +5,13 @@ use serde_json::Value;
 
 use crate::TargetContext;
 
-use super::{DisplayWidget, Metric, OcsfEvent, Result, Severity, Status, ThresholdSpec};
+use super::{
+    DisplayWidget, Metric, OcsfEvent, Result, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+    SIGNAL_SCHEMA_METADATA_SCHEMA_ID, SIGNAL_SCHEMA_METADATA_SERVICE_RADAR,
+    SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
+    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity, SignalSchemaRef, Status, ThresholdSpec,
+    attach_signal_schema_ref,
+};
 
 #[test]
 fn serialize_includes_metrics_and_events() {
@@ -107,6 +113,48 @@ fn ocsf_event_helper_populates_expected_fields() {
     assert_eq!(event.activity_id, 1);
     assert_eq!(event.severity_id, 5);
     assert_eq!(event.message.as_deref(), Some("camera alert"));
+}
+
+#[test]
+fn attach_signal_schema_ref_populates_service_radar_metadata() {
+    let mut event = OcsfEvent::log_activity("camera alert", Severity::Critical);
+    attach_signal_schema_ref(
+        &mut event,
+        &SignalSchemaRef {
+            producer_id: "axis-camera".to_string(),
+            producer_version: "0.1.0".to_string(),
+            schema_id: "com.carverauto.axis_camera.event_log".to_string(),
+            schema_version: "1.0.0".to_string(),
+            display_contract_id: "com.carverauto.axis_camera.event_log.display".to_string(),
+            display_contract_version: "1.0.0".to_string(),
+            display_contract: "display/event_log_activity.display.json".to_string(),
+            signal_type: SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT.to_string(),
+            payload_kind: SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT.to_string(),
+        },
+    );
+
+    let service_radar = event
+        .metadata
+        .get(SIGNAL_SCHEMA_METADATA_SERVICE_RADAR)
+        .and_then(Value::as_object)
+        .expect("service_radar metadata");
+    let signal_schema = service_radar
+        .get(SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA)
+        .and_then(Value::as_object)
+        .expect("signal_schema metadata");
+
+    assert_eq!(
+        signal_schema.get(SIGNAL_SCHEMA_METADATA_SCHEMA_ID),
+        Some(&Value::String(
+            "com.carverauto.axis_camera.event_log".to_string()
+        ))
+    );
+    assert_eq!(
+        signal_schema.get(SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT),
+        Some(&Value::String(
+            "display/event_log_activity.display.json".to_string()
+        ))
+    );
 }
 
 #[test]

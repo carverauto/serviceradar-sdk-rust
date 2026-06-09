@@ -42,7 +42,17 @@ pub use plugin_inputs::{
     PluginInputItem, PluginInputItems, PluginInputsPayload, TargetContext,
     parse_plugin_inputs_json, parse_plugin_inputs_map,
 };
-pub use result::{Event, Metric, Result as PluginResult, Severity, Status, Thresholds, Widget};
+pub use result::{
+    Event, Metric, Result as PluginResult, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+    SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION,
+    SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND, SIGNAL_SCHEMA_METADATA_PRODUCER_ID,
+    SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION, SIGNAL_SCHEMA_METADATA_SCHEMA_ID,
+    SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION, SIGNAL_SCHEMA_METADATA_SERVICE_RADAR,
+    SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA, SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT, SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG,
+    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, SIGNAL_SCHEMA_SIGNAL_TYPE_LOG, Severity, SignalSchemaRef,
+    Status, Thresholds, Widget, attach_signal_schema_ref,
+};
 pub use rtsp::RtspTransport as StreamTransport;
 pub use rtsp::{
     AuthChallenge, H264Depacketizer, InterleavedFrame, StreamClient, StreamEndpoint,
