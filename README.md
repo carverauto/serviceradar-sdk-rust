@@ -102,6 +102,20 @@ let event = sdk::Event::log_activity("camera motion", sdk::Severity::Warning)
 
 The helper writes the ServiceRadar extension metadata under `metadata.service_radar.signal_schema`.
 
+For first-class telemetry that should be routed independently from the plugin result payload, emit a telemetry batch through the host:
+
+```rust
+let record = sdk::TelemetryRecord::ocsf_event(event)?
+    .with_signal_schema_ref(&schema_ref);
+
+sdk::emit_telemetry(
+    sdk::TelemetryBatch::new(vec![record])
+        .with_source(sdk::TelemetrySource::new("axis-camera", "front-door")),
+)?;
+```
+
+`emit_telemetry` serializes the same JSON host ABI payload as the Go SDK and requires the plugin manifest capability `emit_telemetry`.
+
 Build native examples:
 
 ```bash

@@ -14,6 +14,7 @@ mod plugin_inputs;
 mod result;
 mod rtsp;
 mod tcp;
+mod telemetry;
 mod udp;
 mod websocket;
 
@@ -59,6 +60,7 @@ pub use rtsp::{
     StreamResponse, VideoTrack,
 };
 pub use tcp::{TcpConnection, tcp_dial};
+pub use telemetry::{TelemetryBatch, TelemetryRecord, TelemetrySource, emit_telemetry};
 pub use udp::udp_send_to;
 pub use websocket::{
     WebSocketConnection, WebSocketDialRequest, encode_websocket_connect_payload,
