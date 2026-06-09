@@ -12,6 +12,7 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Host-proxied HTTP, TCP, UDP, and WebSocket helpers
 - Policy input parsing and validation for `serviceradar.plugin_inputs.v1`
 - Camera/media helpers and RTSP parsing/depacketization utilities
+- Signal schema/display contract references for package-managed logs and events
 - Example plugins for HTTP, TCP, UDP, and widget-rich results
 
 The Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go` remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
@@ -79,6 +80,27 @@ pub extern "C" fn run_check() {
 - `tcp-check`
 - `udp-check`
 - `widgets-check`
+
+## Signal display contracts
+
+When a plugin emits OCSF events or OTEL-style logs that are described by a package manifest, attach the package schema/display reference through the SDK:
+
+```rust
+let event = sdk::Event::log_activity("camera motion", sdk::Severity::Warning)
+    .with_signal_schema_ref(&sdk::SignalSchemaRef {
+        producer_id: "axis-camera".to_string(),
+        producer_version: "0.1.0".to_string(),
+        schema_id: "com.carverauto.axis_camera.event_log".to_string(),
+        schema_version: "1.0.0".to_string(),
+        display_contract_id: "com.carverauto.axis_camera.event_log.display".to_string(),
+        display_contract_version: "1.0.0".to_string(),
+        display_contract: "display/event_log_activity.display.json".to_string(),
+        signal_type: sdk::SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT.to_string(),
+        payload_kind: sdk::SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT.to_string(),
+    });
+```
+
+The helper writes the ServiceRadar extension metadata under `metadata.service_radar.signal_schema`.
 
 Build native examples:
 
