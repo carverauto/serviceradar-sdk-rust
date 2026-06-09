@@ -3,6 +3,7 @@ mod camera_http;
 mod camera_media;
 mod camera_plugin;
 mod camera_relay;
+mod check_descriptor;
 mod config;
 mod device_discovery;
 mod error;
@@ -15,6 +16,7 @@ mod plugin_inputs;
 mod result;
 mod rtsp;
 mod tcp;
+mod telemetry;
 mod udp;
 mod websocket;
 
@@ -31,6 +33,9 @@ pub use camera_plugin::{
     default_camera_streaming_config, load_camera_plugin_config, load_camera_streaming_config,
 };
 pub use camera_relay::{CameraRelayConfig, with_url_user_info};
+pub use check_descriptor::{
+    CheckDescriptor, RESULT_SCHEMA_TARGET_CHECK_V1, TARGET_KIND_DEVICE, TARGET_KIND_SERVICE,
+};
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
 pub use device_discovery::{
     DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice,
@@ -45,16 +50,28 @@ pub use http::{HttpClient, HttpRequest, HttpResponse, MAX_HTTP_RESPONSE_BYTES};
 pub use log::{LOG, LogLevel, Logger};
 pub use memory::{alloc, dealloc};
 pub use plugin_inputs::{
-    PLUGIN_INPUTS_SCHEMA_V1, PluginInput, PluginInputItem, PluginInputItems, PluginInputsPayload,
+    CredentialBrokerGrant, CredentialPolicySnapshot, PLUGIN_INPUTS_SCHEMA_V1, PluginInput,
+    PluginInputItem, PluginInputItems, PluginInputsPayload, TargetContext,
     parse_plugin_inputs_json, parse_plugin_inputs_map,
 };
-pub use result::{Event, Metric, Result as PluginResult, Severity, Status, Thresholds, Widget};
+pub use result::{
+    Event, Metric, Result as PluginResult, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+    SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION,
+    SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND, SIGNAL_SCHEMA_METADATA_PRODUCER_ID,
+    SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION, SIGNAL_SCHEMA_METADATA_SCHEMA_ID,
+    SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION, SIGNAL_SCHEMA_METADATA_SERVICE_RADAR,
+    SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA, SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT, SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG,
+    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, SIGNAL_SCHEMA_SIGNAL_TYPE_LOG, Severity, SignalSchemaRef,
+    Status, Thresholds, Widget, attach_signal_schema_ref,
+};
 pub use rtsp::RtspTransport as StreamTransport;
 pub use rtsp::{
     AuthChallenge, H264Depacketizer, InterleavedFrame, StreamClient, StreamEndpoint,
     StreamResponse, VideoTrack,
 };
 pub use tcp::{TcpConnection, tcp_dial};
+pub use telemetry::{TelemetryBatch, TelemetryRecord, TelemetrySource, emit_telemetry};
 pub use udp::udp_send_to;
 pub use websocket::{
     WebSocketConnection, WebSocketDialRequest, encode_websocket_connect_payload,

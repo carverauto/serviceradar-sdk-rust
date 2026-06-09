@@ -248,10 +248,10 @@ where
             response = RtspResponse::read_from(&mut self.conn, self.timeout)?;
         }
 
-        if self.session.is_empty()
-            && let Some(session) = response.headers.get("session")
-        {
-            self.session = parse_session_header(session);
+        if self.session.is_empty() {
+            if let Some(session) = response.headers.get("session") {
+                self.session = parse_session_header(session);
+            }
         }
 
         if response.status_code >= 400 {
@@ -403,9 +403,11 @@ pub fn build_rtsp_authorization(
         return String::new();
     }
 
-    if let Some(auth) = auth
-        && auth.scheme.eq_ignore_ascii_case("digest")
-    {
+    if let Some(auth) = auth {
+        if !auth.scheme.eq_ignore_ascii_case("digest") {
+            return String::new();
+        }
+
         auth.nc += 1;
         let nc = format!("{:08x}", auth.nc);
         let cnonce = if auth.cnonce.is_empty() {
