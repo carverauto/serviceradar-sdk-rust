@@ -97,6 +97,7 @@ pub(crate) use test_support::{TestHostBackend, install_test_backend};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
+    #[link(wasm_import_module = "env")]
     unsafe extern "C" {
         #[link_name = "get_config"]
         fn raw_get_config(ptr: u32, size: u32) -> i32;
