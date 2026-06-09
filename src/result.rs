@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
+use crate::device_discovery::DeviceDiscovery;
 use crate::error::SdkResult;
 use crate::plugin_inputs::TargetContext;
 
@@ -399,6 +400,8 @@ pub struct Result {
     monitored_service_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     device_uid: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    device_discovery: Vec<DeviceDiscovery>,
 }
 
 impl Result {
@@ -419,6 +422,7 @@ impl Result {
             check_instance_id: None,
             monitored_service_id: None,
             device_uid: None,
+            device_discovery: Vec::new(),
         }
     }
 
@@ -477,6 +481,10 @@ impl Result {
 
     pub fn events(&self) -> &[OcsfEvent] {
         &self.events
+    }
+
+    pub fn device_discovery(&self) -> &[DeviceDiscovery] {
+        &self.device_discovery
     }
 
     pub fn set_status(&mut self, status: Status) {
@@ -727,6 +735,15 @@ impl Result {
         self
     }
 
+    pub fn add_device_discovery(&mut self, discovery: DeviceDiscovery) {
+        self.device_discovery.push(discovery);
+    }
+
+    pub fn with_device_discovery(mut self, discovery: DeviceDiscovery) -> Self {
+        self.add_device_discovery(discovery);
+        self
+    }
+
     pub fn request_immediate_alert(&mut self, condition_id: impl Into<String>) {
         self.alert_hint = true;
         self.condition_id = Some(condition_id.into());
@@ -779,6 +796,7 @@ impl Result {
             check_instance_id: self.check_instance_id.clone(),
             monitored_service_id: self.monitored_service_id.clone(),
             device_uid: self.device_uid.clone(),
+            device_discovery: self.device_discovery.clone(),
         })
     }
 }
@@ -864,6 +882,15 @@ fn put_signal_schema_field(metadata: &mut Map<String, Value>, key: &str, value: 
     }
 }
 
+impl Extend<DeviceDiscovery> for Result {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = DeviceDiscovery>,
+    {
+        self.device_discovery.extend(iter);
+    }
+}
+
 impl Default for Result {
     fn default() -> Self {
         Self::new()
@@ -898,6 +925,8 @@ struct SerializableResult {
     monitored_service_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     device_uid: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    device_discovery: Vec<DeviceDiscovery>,
 }
 
 const OCSF_CLASS_EVENT_LOG_ACTIVITY: i32 = 1008;

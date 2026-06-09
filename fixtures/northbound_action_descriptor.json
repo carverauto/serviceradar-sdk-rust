@@ -1,0 +1,34 @@
+{
+  "action_id": "hpna.disable_port",
+  "version": "1.0.0",
+  "label": "Disable switch port",
+  "description": "Calls an external network management system to disable an interface",
+  "scopes": [
+    "interface"
+  ],
+  "required_context": [
+    "device.ip",
+    "interface.name"
+  ],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "reason": {
+        "type": "string",
+        "title": "Reason"
+      }
+    },
+    "required": [
+      "reason"
+    ]
+  },
+  "timeout_seconds": 120,
+  "safety_classification": "destructive",
+  "requires_confirmation": true,
+  "credential_requirements": {
+    "secret_refs": [
+      "hpna_api_token"
+    ]
+  },
+  "result_schema_version": "serviceradar.northbound_action_result.v1"
+}

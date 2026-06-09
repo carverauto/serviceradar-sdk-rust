@@ -1,9 +1,11 @@
+mod action;
 mod camera_http;
 mod camera_media;
 mod camera_plugin;
 mod camera_relay;
 mod check_descriptor;
 mod config;
+mod device_discovery;
 mod error;
 mod execute;
 mod host;
@@ -18,6 +20,12 @@ mod telemetry;
 mod udp;
 mod websocket;
 
+pub use action::{
+    ACTION_INVOCATION_SCHEMA_V1, ACTION_RESULT_SCHEMA_V1, ActionCallback, ActionDescriptor,
+    ActionHostConfig, ActionInvocation, ActionPollMode, ActionResult, ActionSafety, ActionScope,
+    ActionStatus, ActionTargetResult, ActionTargetSnapshot, load_action_config,
+    parse_action_config, submit_action_result,
+};
 pub use camera_http::CameraHttpClient;
 pub use camera_media::{MediaChunk, MediaHeartbeat, MediaOpenRequest, MediaStream};
 pub use camera_plugin::{
@@ -29,6 +37,9 @@ pub use check_descriptor::{
     CheckDescriptor, RESULT_SCHEMA_TARGET_CHECK_V1, TARGET_KIND_DEVICE, TARGET_KIND_SERVICE,
 };
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
+pub use device_discovery::{
+    DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice,
+};
 pub use error::{
     Error, HOST_ERR_BAD_HANDLE, HOST_ERR_DENIED, HOST_ERR_INTERNAL, HOST_ERR_INVALID,
     HOST_ERR_NOT_FOUND, HOST_ERR_OK, HOST_ERR_TIMEOUT, HOST_ERR_TOO_LARGE, HostError,
