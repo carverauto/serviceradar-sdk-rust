@@ -298,23 +298,23 @@ impl TargetContext {
     }
 }
 
-impl<'a> Iterator for PluginInputItems<'a> {
+impl Iterator for PluginInputItems<'_> {
     type Item = PluginInputItem;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let (Some(input), Some(items)) = (self.current_input, self.current_items.as_mut())
-                && let Some(item) = items.next()
-            {
-                return Some(PluginInputItem {
-                    name: input.name.clone(),
-                    entity: input.entity.clone(),
-                    query: input.query.clone(),
-                    chunk_index: input.chunk_index,
-                    chunk_total: input.chunk_total,
-                    chunk_hash: input.chunk_hash.clone(),
-                    item: item.clone(),
-                });
+            if let (Some(input), Some(items)) = (self.current_input, self.current_items.as_mut()) {
+                if let Some(item) = items.next() {
+                    return Some(PluginInputItem {
+                        name: input.name.clone(),
+                        entity: input.entity.clone(),
+                        query: input.query.clone(),
+                        chunk_index: input.chunk_index,
+                        chunk_total: input.chunk_total,
+                        chunk_hash: input.chunk_hash.clone(),
+                        item: item.clone(),
+                    });
+                }
             }
 
             let input = self.inputs.next()?;
