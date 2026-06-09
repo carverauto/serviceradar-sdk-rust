@@ -3,14 +3,15 @@ use std::fs;
 
 use serde_json::Value;
 
-use crate::TargetContext;
-
 use super::{
     DisplayWidget, Metric, OcsfEvent, Result, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
     SIGNAL_SCHEMA_METADATA_SCHEMA_ID, SIGNAL_SCHEMA_METADATA_SERVICE_RADAR,
     SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
     SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity, SignalSchemaRef, Status, ThresholdSpec,
     attach_signal_schema_ref,
+};
+use crate::{
+    DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice, TargetContext,
 };
 
 #[test]
@@ -260,4 +261,51 @@ fn domain_type_constructors_build_expected_shapes() {
 
     let event = OcsfEvent::log_activity("camera alert", Severity::Critical);
     assert_eq!(event.message.as_deref(), Some("camera alert"));
+}
+
+#[test]
+fn serialize_includes_device_discovery() {
+    let location = DeviceLocation::at(29.9844, -95.3414)
+        .with_site_code("IAH")
+        .with_site_name("Houston");
+
+    let device = DiscoveredDevice::named("NIAHAP-MDF001-WAP001")
+        .with_serial("CNC3HN77NW")
+        .with_device_type("access_point")
+        .with_location(location)
+        .with_label("site", "IAH")
+        .with_metadata("radio_count", 2);
+
+    let payload = Result::ok("discovered 1 device")
+        .with_device_discovery(DeviceDiscovery::new("ual-network-map").with_device(device))
+        .serialize()
+        .expect("serialize result");
+
+    let decoded: Value = serde_json::from_slice(&payload).expect("decode result");
+
+    assert_eq!(
+        decoded["device_discovery"][0]["schema"],
+        DEVICE_DISCOVERY_SCHEMA_V1
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["hostname"],
+        "NIAHAP-MDF001-WAP001"
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["type"],
+        "access_point"
+    );
+    assert!(
+        decoded["device_discovery"][0]["devices"][0]
+            .get("device_type")
+            .is_none()
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["location"]["site_code"],
+        "IAH"
+    );
+    assert_eq!(
+        decoded["device_discovery"][0]["devices"][0]["metadata"]["radio_count"],
+        2
+    );
 }

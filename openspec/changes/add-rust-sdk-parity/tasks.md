@@ -24,6 +24,7 @@
 - [x] 5.1 Implement `serviceradar.plugin_inputs.v1` parsing, validation, flattening, and filtered iteration helpers.
 - [x] 5.2 Implement camera/media and related helper APIs needed to match the current Go SDK capability surface.
 - [x] 5.3 Add tests for plugin inputs and camera/media helper behavior.
+- [x] 5.4 Implement northbound action deferred/poll/webhook callback payload parity with the Go SDK.
 
 ## 6. Examples and CI
 - [x] 6.1 Add example Rust plugins covering at least HTTP, TCP, UDP, and rich result/widget usage.
