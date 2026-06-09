@@ -4,11 +4,12 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::device_discovery::DeviceDiscovery;
 use crate::error::SdkResult;
+use crate::plugin_inputs::TargetContext;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -338,6 +339,35 @@ pub type Thresholds = ThresholdSpec;
 pub type Widget = DisplayWidget;
 pub type Event = OcsfEvent;
 
+pub const SIGNAL_SCHEMA_METADATA_SERVICE_RADAR: &str = "service_radar";
+pub const SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA: &str = "signal_schema";
+pub const SIGNAL_SCHEMA_METADATA_PRODUCER_ID: &str = "producer_id";
+pub const SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION: &str = "producer_version";
+pub const SIGNAL_SCHEMA_METADATA_SCHEMA_ID: &str = "schema_id";
+pub const SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION: &str = "schema_version";
+pub const SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID: &str = "display_contract_id";
+pub const SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION: &str = "display_contract_version";
+pub const SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT: &str = "display_contract";
+pub const SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE: &str = "signal_type";
+pub const SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND: &str = "payload_kind";
+pub const SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT: &str = "event";
+pub const SIGNAL_SCHEMA_SIGNAL_TYPE_LOG: &str = "log";
+pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT: &str = "ocsf_event";
+pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG: &str = "otel_log";
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignalSchemaRef {
+    pub producer_id: String,
+    pub producer_version: String,
+    pub schema_id: String,
+    pub schema_version: String,
+    pub display_contract_id: String,
+    pub display_contract_version: String,
+    pub display_contract: String,
+    pub signal_type: String,
+    pub payload_kind: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Result {
     #[serde(skip)]
@@ -364,6 +394,12 @@ pub struct Result {
     alert_hint: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     condition_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check_instance_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    monitored_service_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_uid: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     device_discovery: Vec<DeviceDiscovery>,
 }
@@ -383,6 +419,9 @@ impl Result {
             events: Vec::new(),
             alert_hint: false,
             condition_id: None,
+            check_instance_id: None,
+            monitored_service_id: None,
+            device_uid: None,
             device_discovery: Vec::new(),
         }
     }
@@ -406,6 +445,13 @@ impl Result {
     pub fn unknown(summary: impl Into<String>) -> Self {
         Self::new()
             .with_status(Status::Unknown)
+            .with_summary(summary)
+    }
+
+    pub fn target(ctx: &TargetContext, status: Status, summary: impl Into<String>) -> Self {
+        Self::new()
+            .for_target(ctx)
+            .with_status(status)
             .with_summary(summary)
     }
 
@@ -492,6 +538,22 @@ impl Result {
 
     pub fn with_observed_at(mut self, observed_at: impl Into<String>) -> Self {
         self.set_observed_at(observed_at);
+        self
+    }
+
+    pub fn for_target(mut self, ctx: &TargetContext) -> Self {
+        self.check_instance_id = Some(ctx.check_instance_id.clone());
+        self.monitored_service_id = ctx.monitored_service_id().map(ToOwned::to_owned);
+        self.device_uid = ctx.device_uid().map(ToOwned::to_owned);
+        self.add_label("check_instance_id", ctx.check_instance_id.clone());
+
+        if !ctx.descriptor_id.is_empty() {
+            self.add_label("descriptor_id", ctx.descriptor_id.clone());
+        }
+        if !ctx.uid.is_empty() {
+            self.add_label("target_uid", ctx.uid.clone());
+        }
+
         self
     }
 
@@ -731,8 +793,92 @@ impl Result {
             events: self.events.clone(),
             alert_hint: self.alert_hint,
             condition_id: self.condition_id.clone(),
+            check_instance_id: self.check_instance_id.clone(),
+            monitored_service_id: self.monitored_service_id.clone(),
+            device_uid: self.device_uid.clone(),
             device_discovery: self.device_discovery.clone(),
         })
+    }
+}
+
+impl OcsfEvent {
+    pub fn attach_signal_schema_ref(&mut self, signal_schema: &SignalSchemaRef) {
+        attach_signal_schema_ref(self, signal_schema);
+    }
+
+    pub fn with_signal_schema_ref(mut self, signal_schema: &SignalSchemaRef) -> Self {
+        self.attach_signal_schema_ref(signal_schema);
+        self
+    }
+}
+
+pub fn attach_signal_schema_ref(event: &mut OcsfEvent, signal_schema: &SignalSchemaRef) {
+    let mut ref_metadata = Map::new();
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_PRODUCER_ID,
+        &signal_schema.producer_id,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION,
+        &signal_schema.producer_version,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_SCHEMA_ID,
+        &signal_schema.schema_id,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION,
+        &signal_schema.schema_version,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID,
+        &signal_schema.display_contract_id,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION,
+        &signal_schema.display_contract_version,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+        &signal_schema.display_contract,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE,
+        &signal_schema.signal_type,
+    );
+    put_signal_schema_field(
+        &mut ref_metadata,
+        SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND,
+        &signal_schema.payload_kind,
+    );
+
+    let service_radar = event
+        .metadata
+        .entry(SIGNAL_SCHEMA_METADATA_SERVICE_RADAR.to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !service_radar.is_object() {
+        *service_radar = Value::Object(Map::new());
+    }
+
+    if let Some(service_radar) = service_radar.as_object_mut() {
+        service_radar.insert(
+            SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA.to_string(),
+            Value::Object(ref_metadata),
+        );
+    }
+}
+
+fn put_signal_schema_field(metadata: &mut Map<String, Value>, key: &str, value: &str) {
+    if !value.is_empty() {
+        metadata.insert(key.to_string(), Value::String(value.to_string()));
     }
 }
 
@@ -773,6 +919,12 @@ struct SerializableResult {
     alert_hint: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     condition_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check_instance_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    monitored_service_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_uid: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     device_discovery: Vec<DeviceDiscovery>,
 }

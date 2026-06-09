@@ -17,6 +17,10 @@ pub(crate) trait HostBackend: Send {
         HOST_ERR_NOT_FOUND
     }
 
+    fn emit_telemetry(&mut self, _payload: &[u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
     fn http_request(&mut self, _req: &[u8], _resp: &mut [u8]) -> i32 {
         HOST_ERR_NOT_FOUND
     }
@@ -93,6 +97,7 @@ pub(crate) use test_support::{TestHostBackend, install_test_backend};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
+    #[link(wasm_import_module = "env")]
     unsafe extern "C" {
         #[link_name = "get_config"]
         fn raw_get_config(ptr: u32, size: u32) -> i32;
@@ -100,6 +105,8 @@ mod wasm {
         fn raw_log(level: u32, ptr: u32, size: u32);
         #[link_name = "submit_result"]
         fn raw_submit_result(ptr: u32, size: u32) -> i32;
+        #[link_name = "emit_telemetry"]
+        fn raw_emit_telemetry(ptr: u32, size: u32) -> i32;
         #[link_name = "http_request"]
         fn raw_http_request(req_ptr: u32, req_len: u32, resp_ptr: u32, resp_len: u32) -> i32;
         #[link_name = "tcp_connect"]
@@ -169,6 +176,10 @@ mod wasm {
 
     pub(crate) fn submit_result(payload: &[u8]) -> i32 {
         unsafe { raw_submit_result(ptr(payload), payload.len() as u32) }
+    }
+
+    pub(crate) fn emit_telemetry(payload: &[u8]) -> i32 {
+        unsafe { raw_emit_telemetry(ptr(payload), payload.len() as u32) }
     }
 
     pub(crate) fn http_request(req: &[u8], resp: &mut [u8]) -> i32 {
@@ -298,6 +309,14 @@ pub(crate) fn submit_result(payload: &[u8]) -> i32 {
         .lock()
         .expect("host mutex poisoned")
         .submit_result(payload)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn emit_telemetry(payload: &[u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .emit_telemetry(payload)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -432,4 +451,15 @@ pub(crate) fn submit_non_empty_result(payload: &[u8]) -> Result<(), HostError> {
     }
 
     host_error(submit_result(payload), "submit_result")
+}
+
+pub(crate) fn emit_non_empty_telemetry(payload: &[u8]) -> Result<(), HostError> {
+    if payload.is_empty() {
+        return Err(HostError {
+            code: crate::error::HOST_ERR_INVALID,
+            op: "emit_telemetry",
+        });
+    }
+
+    host_error(emit_telemetry(payload), "emit_telemetry")
 }

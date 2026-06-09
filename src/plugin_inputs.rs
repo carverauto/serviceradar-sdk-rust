@@ -49,6 +49,50 @@ pub struct PluginInputItem {
     pub item: BTreeMap<String, Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct CredentialBrokerGrant {
+    pub grant_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_secret_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_type: Option<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub inject: BTreeMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct CredentialPolicySnapshot {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub credential_brokers: Vec<CredentialBrokerGrant>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub credential_broker_grant_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TargetContext {
+    pub uid: String,
+    pub check_instance_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub monitoring_binding_id: Option<String>,
+    pub descriptor_id: String,
+    pub descriptor_version: String,
+    pub target_kind: String,
+    #[serde(default)]
+    pub target: BTreeMap<String, Value>,
+    #[serde(default)]
+    pub credential_policy: CredentialPolicySnapshot,
+    #[serde(default)]
+    pub event_policy: BTreeMap<String, Value>,
+}
+
 #[derive(Debug, Clone)]
 pub struct PluginInputItems<'a> {
     inputs: std::slice::Iter<'a, PluginInput>,
@@ -181,25 +225,96 @@ impl PluginInputsPayload {
             .filter(|item| item.name.trim().eq_ignore_ascii_case(&name))
             .collect()
     }
+
+    pub fn target_contexts(&self) -> SdkResult<Vec<TargetContext>> {
+        self.iter_items()
+            .enumerate()
+            .map(|(index, item)| {
+                item.target_context().map_err(|err| {
+                    Error::InvalidPluginInputs(format!(
+                        "decode target context at flattened item {index}: {err}"
+                    ))
+                })
+            })
+            .collect()
+    }
 }
 
-impl<'a> Iterator for PluginInputItems<'a> {
+impl PluginInputItem {
+    pub fn target_context(&self) -> SdkResult<TargetContext> {
+        let ctx: TargetContext = serde_json::from_value(Value::Object(
+            self.item
+                .clone()
+                .into_iter()
+                .collect::<serde_json::Map<String, Value>>(),
+        ))?;
+
+        if ctx.check_instance_id.trim().is_empty() {
+            return Err(Error::InvalidPluginInputs(
+                "target context missing check_instance_id".to_string(),
+            ));
+        }
+        if ctx.descriptor_id.trim().is_empty() {
+            return Err(Error::InvalidPluginInputs(
+                "target context missing descriptor_id".to_string(),
+            ));
+        }
+
+        Ok(ctx)
+    }
+}
+
+impl TargetContext {
+    pub fn monitored_service_id(&self) -> Option<&str> {
+        string_value(&self.target, "monitored_service_id")
+    }
+
+    pub fn device_uid(&self) -> Option<&str> {
+        string_value(&self.target, "device_uid")
+    }
+
+    pub fn endpoint_url(&self) -> Option<&str> {
+        string_value(&self.target, "endpoint_url")
+    }
+
+    pub fn host(&self) -> Option<&str> {
+        string_value(&self.target, "host")
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        string_value(&self.target, "path")
+    }
+
+    pub fn port(&self) -> Option<u16> {
+        match self.target.get("port") {
+            Some(Value::Number(value)) => value.as_u64().and_then(|port| u16::try_from(port).ok()),
+            Some(Value::String(value)) => value.parse::<u16>().ok(),
+            _ => None,
+        }
+    }
+
+    pub fn credential_grants(&self) -> &[CredentialBrokerGrant] {
+        &self.credential_policy.credential_brokers
+    }
+}
+
+impl Iterator for PluginInputItems<'_> {
     type Item = PluginInputItem;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let (Some(input), Some(items)) = (self.current_input, self.current_items.as_mut())
-                && let Some(item) = items.next()
-            {
-                return Some(PluginInputItem {
-                    name: input.name.clone(),
-                    entity: input.entity.clone(),
-                    query: input.query.clone(),
-                    chunk_index: input.chunk_index,
-                    chunk_total: input.chunk_total,
-                    chunk_hash: input.chunk_hash.clone(),
-                    item: item.clone(),
-                });
+            if let (Some(input), Some(items)) = (self.current_input, self.current_items.as_mut()) {
+                if let Some(item) = items.next() {
+                    return Some(PluginInputItem {
+                        name: input.name.clone(),
+                        entity: input.entity.clone(),
+                        query: input.query.clone(),
+                        chunk_index: input.chunk_index,
+                        chunk_total: input.chunk_total,
+                        chunk_hash: input.chunk_hash.clone(),
+                        item: item.clone(),
+                    });
+                }
             }
 
             let input = self.inputs.next()?;
@@ -231,6 +346,13 @@ impl TryFrom<&BTreeMap<String, Value>> for PluginInputsPayload {
 
     fn try_from(value: &BTreeMap<String, Value>) -> Result<Self, Self::Error> {
         Self::parse_map(value)
+    }
+}
+
+fn string_value<'a>(map: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
+    match map.get(key) {
+        Some(Value::String(value)) if !value.is_empty() => Some(value.as_str()),
+        _ => None,
     }
 }
 

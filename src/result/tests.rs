@@ -1,9 +1,18 @@
 use std::collections::BTreeMap;
+use std::fs;
 
 use serde_json::Value;
 
-use super::{DisplayWidget, Metric, OcsfEvent, Result, Severity, Status, ThresholdSpec};
-use crate::{DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice};
+use super::{
+    DisplayWidget, Metric, OcsfEvent, Result, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+    SIGNAL_SCHEMA_METADATA_SCHEMA_ID, SIGNAL_SCHEMA_METADATA_SERVICE_RADAR,
+    SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
+    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity, SignalSchemaRef, Status, ThresholdSpec,
+    attach_signal_schema_ref,
+};
+use crate::{
+    DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice, TargetContext,
+};
 
 #[test]
 fn serialize_includes_metrics_and_events() {
@@ -108,6 +117,48 @@ fn ocsf_event_helper_populates_expected_fields() {
 }
 
 #[test]
+fn attach_signal_schema_ref_populates_service_radar_metadata() {
+    let mut event = OcsfEvent::log_activity("camera alert", Severity::Critical);
+    attach_signal_schema_ref(
+        &mut event,
+        &SignalSchemaRef {
+            producer_id: "axis-camera".to_string(),
+            producer_version: "0.1.0".to_string(),
+            schema_id: "com.carverauto.axis_camera.event_log".to_string(),
+            schema_version: "1.0.0".to_string(),
+            display_contract_id: "com.carverauto.axis_camera.event_log.display".to_string(),
+            display_contract_version: "1.0.0".to_string(),
+            display_contract: "display/event_log_activity.display.json".to_string(),
+            signal_type: SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT.to_string(),
+            payload_kind: SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT.to_string(),
+        },
+    );
+
+    let service_radar = event
+        .metadata
+        .get(SIGNAL_SCHEMA_METADATA_SERVICE_RADAR)
+        .and_then(Value::as_object)
+        .expect("service_radar metadata");
+    let signal_schema = service_radar
+        .get(SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA)
+        .and_then(Value::as_object)
+        .expect("signal_schema metadata");
+
+    assert_eq!(
+        signal_schema.get(SIGNAL_SCHEMA_METADATA_SCHEMA_ID),
+        Some(&Value::String(
+            "com.carverauto.axis_camera.event_log".to_string()
+        ))
+    );
+    assert_eq!(
+        signal_schema.get(SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT),
+        Some(&Value::String(
+            "display/event_log_activity.display.json".to_string()
+        ))
+    );
+}
+
+#[test]
 fn associated_result_constructors_match_status() {
     assert_eq!(Result::ok("ok").status(), Status::Ok);
     assert_eq!(Result::warning("warn").status(), Status::Warning);
@@ -128,6 +179,49 @@ fn threshold_spec_builders_set_expected_values() {
 fn result_default_matches_new() {
     assert_eq!(Result::default().status(), Result::new().status());
     assert_eq!(Result::default().summary(), Result::new().summary());
+}
+
+#[test]
+fn target_result_serializes_check_instance_identity() {
+    let ctx = TargetContext {
+        uid: "check-1".to_string(),
+        check_instance_id: "check-1".to_string(),
+        check_key: None,
+        monitoring_binding_id: Some("binding-1".to_string()),
+        descriptor_id: "http.url.availability".to_string(),
+        descriptor_version: "1.0.0".to_string(),
+        target_kind: "service".to_string(),
+        target: BTreeMap::from([
+            (
+                "monitored_service_id".to_string(),
+                Value::String("service-1".to_string()),
+            ),
+            (
+                "device_uid".to_string(),
+                Value::String("sr:device-1".to_string()),
+            ),
+        ]),
+        credential_policy: Default::default(),
+        event_policy: BTreeMap::new(),
+    };
+
+    let payload = Result::target(&ctx, Status::Ok, "HTTP 200")
+        .serialize()
+        .expect("serialize target result");
+    let decoded: Value = serde_json::from_slice(&payload).expect("decode target result");
+
+    assert_eq!(decoded["check_instance_id"], "check-1");
+    assert_eq!(decoded["monitored_service_id"], "service-1");
+    assert_eq!(decoded["device_uid"], "sr:device-1");
+}
+
+#[test]
+fn service_monitoring_result_fixture_decodes() {
+    let raw = fs::read_to_string("testdata/service_monitoring_result.json").expect("fixture");
+    let decoded: Value = serde_json::from_str(&raw).expect("decode result fixture");
+
+    assert_eq!(decoded["check_instance_id"], "check-1");
+    assert_eq!(decoded["monitored_service_id"], "service-1");
 }
 
 #[test]

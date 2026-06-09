@@ -1,0 +1,45 @@
+{
+  "schema": "serviceradar.plugin_inputs.v1",
+  "policy_id": "monitoring_binding:binding-1",
+  "policy_version": 1,
+  "agent_id": "agent-a",
+  "generated_at": "2026-05-21T23:00:00Z",
+  "inputs": [
+    {
+      "name": "monitoring_binding:binding-1",
+      "entity": "monitoring_checks",
+      "query": "monitoring_binding_id=binding-1",
+      "chunk_index": 0,
+      "chunk_total": 1,
+      "chunk_hash": "abc",
+      "items": [
+        {
+          "uid": "check-1",
+          "check_instance_id": "check-1",
+          "monitoring_binding_id": "binding-1",
+          "descriptor_id": "http.url.availability",
+          "descriptor_version": "1.0.0",
+          "target_kind": "service",
+          "target": {
+            "monitored_service_id": "service-1",
+            "endpoint_url": "https://example.test/health",
+            "host": "example.test",
+            "port": 443,
+            "path": "/health",
+            "device_uid": "sr:device-1"
+          },
+          "credential_policy": {
+            "credential_brokers": [
+              {
+                "grant_id": "grant-1",
+                "credential_secret_ref": "credentialref:network-credential-secret:secret-1",
+                "grant_type": "http_auth"
+              }
+            ],
+            "credential_broker_grant_ids": ["grant-1"]
+          }
+        }
+      ]
+    }
+  ]
+}
