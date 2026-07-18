@@ -1,4 +1,6 @@
 mod action;
+mod advisory_feed;
+mod artifact;
 mod camera_http;
 mod camera_media;
 mod camera_plugin;
@@ -11,6 +13,7 @@ mod execute;
 mod host;
 mod http;
 mod log;
+mod manifest;
 mod memory;
 mod plugin_inputs;
 mod result;
@@ -25,6 +28,15 @@ pub use action::{
     ActionHostConfig, ActionInvocation, ActionPollMode, ActionResult, ActionSafety, ActionScope,
     ActionStatus, ActionTargetResult, ActionTargetSnapshot, load_action_config,
     parse_action_config, submit_action_result,
+};
+pub use advisory_feed::{
+    ADVISORY_FEED_CONTRACT_VERSION, AdvisoryFeedBatch, AdvisoryRecord, AdvisorySnapshot,
+    AdvisorySource, AffectedCoordinate, CAPABILITY_ADVISORY_FEED_V1, COORDINATE_TYPE_CPE,
+    COORDINATE_TYPE_PURL, COORDINATE_TYPE_VENDOR_PRODUCT,
+};
+pub use artifact::{
+    ArtifactChunkMetadata, ArtifactCommitRequest, ArtifactCommitResponse, ArtifactOpenRequest,
+    ArtifactStream, CAPABILITY_ARTIFACT_STAGING_V1,
 };
 pub use camera_http::CameraHttpClient;
 pub use camera_media::{MediaChunk, MediaHeartbeat, MediaOpenRequest, MediaStream};
@@ -48,6 +60,12 @@ pub use error::{
 pub use execute::{ExecuteErrorWithResult, execute, execute_partial, submit_result_payload};
 pub use http::{HttpClient, HttpRequest, HttpResponse, MAX_HTTP_RESPONSE_BYTES};
 pub use log::{LOG, LogLevel, Logger};
+pub use manifest::{
+    CONFLICT_POLICY_OVERRIDE, CONFLICT_POLICY_REJECT, EventWriterContribution,
+    ManifestValidationError, PROCESSOR_JSON_TO_OCSF, PROCESSOR_OCSF_PASSTHROUGH,
+    PROCESSOR_OTEL_LOG_PASSTHROUGH, PROCESSOR_SCAN_ACTIVITY, PROCESSOR_SECURITY_FINDING,
+    PluginManifest, SignalSchemaContribution,
+};
 pub use memory::{alloc, dealloc};
 pub use plugin_inputs::{
     CredentialBrokerGrant, CredentialPolicySnapshot, PLUGIN_INPUTS_SCHEMA_V1, PluginInput,
@@ -61,9 +79,10 @@ pub use result::{
     SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION, SIGNAL_SCHEMA_METADATA_SCHEMA_ID,
     SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION, SIGNAL_SCHEMA_METADATA_SERVICE_RADAR,
     SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA, SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE,
-    SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT, SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG,
-    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, SIGNAL_SCHEMA_SIGNAL_TYPE_LOG, Severity, SignalSchemaRef,
-    Status, Thresholds, Widget, attach_signal_schema_ref,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_JSON, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG, SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT,
+    SIGNAL_SCHEMA_SIGNAL_TYPE_LOG, Severity, SignalSchemaRef, Status, Thresholds, Widget,
+    attach_signal_schema_ref,
 };
 pub use rtsp::RtspTransport as StreamTransport;
 pub use rtsp::{

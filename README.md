@@ -117,6 +117,124 @@ sdk::emit_telemetry(
 
 `emit_telemetry` serializes the same JSON host ABI payload as the Go SDK and requires the plugin manifest capability `emit_telemetry`.
 
+## Advisory feed batches
+
+Vulnerability and threat-intelligence feed plugins should normalize provider
+data inside the plugin and submit `serviceradar.advisory_feed.contract.v1`
+batches through the normal plugin result path. Core stores and matches the
+generic contract; it does not parse provider-native CISA, NVD, VulnCheck, or
+similar feed formats.
+
+```rust
+let mut batch = sdk::AdvisoryFeedBatch::new(
+    "com.example.vuln-feed",
+    sdk::AdvisorySource::new("example", "normalized")
+        .with_display_name("Example Advisory Feed"),
+    sdk::AdvisorySnapshot::accepted(
+        "vulnerability-feeds/example/latest.json",
+        "<sha256>",
+    ),
+)
+.with_advisory(
+    sdk::AdvisoryRecord::new("example:CVE-2026-1", "CVE-2026-1")
+        .with_cve_id("CVE-2026-1")
+        .with_severity("high")
+        .with_affected_coordinate(
+            sdk::AffectedCoordinate::purl("pkg:generic/example/pkg@1.0.0")
+                .with_match_semantics("plugin_normalized"),
+        ),
+);
+
+let result = sdk::PluginResult::ok("accepted advisory batch")
+    .with_advisory_feed(batch);
+```
+
+Declare `submit_result` and `advisory-feed:v1` in the plugin manifest.
+
+Large archive or pointer feeds do not require native add-ons solely for object
+storage. Plugins that need durable snapshots should also declare
+`artifact-staging:v1` and use the host-brokered artifact stream. The host sends
+object traffic through agent-gateway; plugins and add-ons never talk directly to
+JetStream or the object store.
+
+```rust
+let mut stream = sdk::ArtifactStream::open(
+    sdk::ArtifactOpenRequest::new("vulnerability-feeds/example/latest.zip")
+        .with_type("advisory-feed-snapshot")
+        .with_content_type("application/zip")
+        .with_sha256("<sha256>"),
+)?;
+
+stream.write(sdk::ArtifactChunkMetadata::new(1), chunk)?;
+
+let artifact = stream.commit(
+    sdk::ArtifactCommitRequest::new()
+        .with_sha256("<sha256>")
+        .with_size_bytes(total_bytes),
+)?;
+
+batch.snapshot.object_key = artifact.object_key;
+batch.snapshot.sha256 = artifact.sha256.unwrap_or_default();
+batch.snapshot.size_bytes = artifact.size_bytes;
+```
+
+## Manifest EventWriter contributions
+
+Packages can declare how emitted telemetry should be routed and normalized by core
+without shipping executable EventWriter code. Use the manifest helpers to keep the
+contract shape and processor IDs aligned with core validation:
+
+```rust
+let mut schema = sdk::SignalSchemaContribution::new(
+    "com.carverauto.security.scan_activity",
+    "1.0.0",
+    sdk::SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT,
+    sdk::SIGNAL_SCHEMA_PAYLOAD_KIND_JSON,
+);
+schema.ocsf_schema_version = Some("1.9.0-dev".to_string());
+schema.class_uid = Some(6007);
+schema.type_uid = Some(600701);
+
+let processor = sdk::EventWriterContribution::new(
+    "security_scan_activity",
+    "plugins.security_sample.scan_activity",
+    sdk::PROCESSOR_SCAN_ACTIVITY,
+)
+.with_stream_name("events")
+.with_destination("table", "ocsf_events")
+.with_ocsf("schema_version", "1.9.0-dev")
+.with_ocsf("class_uid", 6007)
+.with_batch(25, 250);
+
+let mut resources = std::collections::BTreeMap::new();
+resources.insert("requested_memory_mb".to_string(), serde_json::json!(32));
+
+let manifest = sdk::PluginManifest {
+    id: "security-sample".to_string(),
+    name: "Security Sample".to_string(),
+    version: "1.0.0".to_string(),
+    entrypoint: "run_check".to_string(),
+    runtime: Some("wasi-preview1".to_string()),
+    capabilities: vec![
+        "get_config".to_string(),
+        "log".to_string(),
+        "submit_result".to_string(),
+        "emit_telemetry".to_string(),
+    ],
+    resources,
+    outputs: "serviceradar.plugin_result.v1".to_string(),
+    signal_schemas: vec![schema.with_event_writer(processor)],
+    ..Default::default()
+};
+
+let payload = manifest.serialize()?;
+```
+
+The processor ID must be one of the platform-owned processors, such as
+`sdk::PROCESSOR_OCSF_PASSTHROUGH`, `sdk::PROCESSOR_OTEL_LOG_PASSTHROUGH`,
+`sdk::PROCESSOR_JSON_TO_OCSF`, `sdk::PROCESSOR_SECURITY_FINDING`, or
+`sdk::PROCESSOR_SCAN_ACTIVITY`.
+
 Build native examples:
 
 ```bash
