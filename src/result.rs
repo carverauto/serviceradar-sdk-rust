@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
+use crate::advisory_feed::{ADVISORY_FEED_CONTRACT_VERSION, AdvisoryFeedBatch};
 use crate::device_discovery::DeviceDiscovery;
 use crate::error::SdkResult;
 use crate::plugin_inputs::TargetContext;
@@ -354,6 +355,7 @@ pub const SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT: &str = "event";
 pub const SIGNAL_SCHEMA_SIGNAL_TYPE_LOG: &str = "log";
 pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT: &str = "ocsf_event";
 pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG: &str = "otel_log";
+pub const SIGNAL_SCHEMA_PAYLOAD_KIND_JSON: &str = "json";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SignalSchemaRef {
@@ -402,6 +404,8 @@ pub struct Result {
     device_uid: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     device_discovery: Vec<DeviceDiscovery>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    advisory_feed: Vec<AdvisoryFeedBatch>,
 }
 
 impl Result {
@@ -423,6 +427,7 @@ impl Result {
             monitored_service_id: None,
             device_uid: None,
             device_discovery: Vec::new(),
+            advisory_feed: Vec::new(),
         }
     }
 
@@ -744,6 +749,19 @@ impl Result {
         self
     }
 
+    pub fn add_advisory_feed(&mut self, mut batch: AdvisoryFeedBatch) {
+        if batch.schema_version.is_empty() {
+            batch.schema_version = ADVISORY_FEED_CONTRACT_VERSION.to_string();
+        }
+        self.advisory_feed.push(batch);
+        self.add_label("advisory_feed_schema", ADVISORY_FEED_CONTRACT_VERSION);
+    }
+
+    pub fn with_advisory_feed(mut self, batch: AdvisoryFeedBatch) -> Self {
+        self.add_advisory_feed(batch);
+        self
+    }
+
     pub fn request_immediate_alert(&mut self, condition_id: impl Into<String>) {
         self.alert_hint = true;
         self.condition_id = Some(condition_id.into());
@@ -797,6 +815,7 @@ impl Result {
             monitored_service_id: self.monitored_service_id.clone(),
             device_uid: self.device_uid.clone(),
             device_discovery: self.device_discovery.clone(),
+            advisory_feed: self.advisory_feed.clone(),
         })
     }
 }
@@ -927,6 +946,8 @@ struct SerializableResult {
     device_uid: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     device_discovery: Vec<DeviceDiscovery>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    advisory_feed: Vec<AdvisoryFeedBatch>,
 }
 
 const OCSF_CLASS_EVENT_LOG_ACTIVITY: i32 = 1008;

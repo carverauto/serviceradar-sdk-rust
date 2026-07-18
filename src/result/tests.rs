@@ -11,7 +11,9 @@ use super::{
     attach_signal_schema_ref,
 };
 use crate::{
-    DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice, TargetContext,
+    ADVISORY_FEED_CONTRACT_VERSION, AdvisoryFeedBatch, AdvisoryRecord, AdvisorySnapshot,
+    AdvisorySource, AffectedCoordinate, DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery,
+    DeviceLocation, DiscoveredDevice, TargetContext,
 };
 
 #[test]
@@ -307,5 +309,50 @@ fn serialize_includes_device_discovery() {
     assert_eq!(
         decoded["device_discovery"][0]["devices"][0]["metadata"]["radio_count"],
         2
+    );
+}
+
+#[test]
+fn serialize_includes_advisory_feed_batch() {
+    let batch = AdvisoryFeedBatch::new(
+        "com.example.vuln-feed",
+        AdvisorySource::new("example", "normalized")
+            .with_display_name("Example Advisory Feed")
+            .with_metadata("plugin_id", "example-feed"),
+        AdvisorySnapshot::accepted(
+            "vulnerability-feeds/example/latest.json",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .with_validation("schema", "plugin-owned"),
+    )
+    .with_advisory(
+        AdvisoryRecord::new("example:CVE-2026-1", "CVE-2026-1")
+            .with_cve_id("CVE-2026-1")
+            .with_severity("high")
+            .with_affected_coordinate(
+                AffectedCoordinate::purl("pkg:generic/example/pkg@1.0.0")
+                    .with_match_semantics("plugin_normalized"),
+            ),
+    );
+
+    let payload = Result::ok("accepted advisory batch")
+        .with_advisory_feed(batch)
+        .serialize()
+        .expect("serialize result");
+
+    let decoded: Value = serde_json::from_slice(&payload).expect("decode result");
+
+    assert_eq!(
+        decoded["advisory_feed"][0]["schema_version"],
+        ADVISORY_FEED_CONTRACT_VERSION
+    );
+    assert_eq!(decoded["advisory_feed"][0]["source"]["provider"], "example");
+    assert_eq!(
+        decoded["advisory_feed"][0]["advisories"][0]["affected_coordinates"][0]["type"],
+        "purl"
+    );
+    assert_eq!(
+        decoded["labels"]["advisory_feed_schema"],
+        ADVISORY_FEED_CONTRACT_VERSION
     );
 }

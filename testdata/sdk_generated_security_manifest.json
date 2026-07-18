@@ -1,0 +1,76 @@
+{
+  "id": "security-sample",
+  "name": "Security Sample",
+  "version": "1.0.0",
+  "entrypoint": "run_check",
+  "runtime": "wasi-preview1",
+  "capabilities": [
+    "get_config",
+    "log",
+    "submit_result",
+    "emit_telemetry"
+  ],
+  "permissions": {
+    "allowed_domains": [],
+    "allowed_ports": []
+  },
+  "resources": {
+    "requested_memory_mb": 32,
+    "requested_cpu_ms": 5000,
+    "max_open_connections": 4
+  },
+  "outputs": "serviceradar.plugin_result.v1",
+  "signal_schemas": [
+    {
+      "id": "com.carverauto.security.scan_activity",
+      "version": "1.0.0",
+      "signal_type": "event",
+      "payload_kind": "json",
+      "payload_schema": "schemas/scan_activity.schema.json",
+      "display_contract": "display/scan_activity.display.json",
+      "display_contract_id": "com.carverauto.security.scan_activity.display",
+      "display_contract_version": "1.0.0",
+      "ocsf_schema_version": "1.9.0-dev",
+      "class_uid": 6007,
+      "type_uid": 600701,
+      "event_writer": [
+        {
+          "name": "security_scan_activity",
+          "stream_name": "events",
+          "subject": "plugins.security_sample.scan_activity",
+          "processor_id": "scan_activity",
+          "destination": {
+            "table": "ocsf_events"
+          },
+          "ocsf": {
+            "schema_version": "1.9.0-dev",
+            "class_uid": 6007,
+            "activity_id": 1
+          },
+          "mapping": {
+            "fields": {
+              "device.name": {
+                "path": "host.hostname"
+              },
+              "message": {
+                "template": "Security scan completed for {{host.hostname}}"
+              }
+            }
+          },
+          "device_correlation": {
+            "candidates": [
+              "host.hostname",
+              "metadata.service_radar.agent_id"
+            ]
+          },
+          "limits": {
+            "max_output_bytes": 131072
+          },
+          "conflict_policy": "reject",
+          "batch_size": 25,
+          "batch_timeout": 250
+        }
+      ]
+    }
+  ]
+}

@@ -76,6 +76,22 @@ pub(crate) trait HostBackend: Send {
     fn camera_media_close(&mut self, _handle: u32, _reason: &[u8]) -> i32 {
         HOST_ERR_NOT_FOUND
     }
+
+    fn artifact_open(&mut self, _req: &[u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
+    fn artifact_write(&mut self, _handle: u32, _meta: &[u8], _payload: &[u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
+    fn artifact_commit(&mut self, _handle: u32, _req: &[u8], _resp: &mut [u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
+    fn artifact_abort(&mut self, _handle: u32, _reason: &[u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -148,6 +164,26 @@ mod wasm {
         fn raw_camera_media_heartbeat(handle: u32, meta_ptr: u32, meta_len: u32) -> i32;
         #[link_name = "camera_media_close"]
         fn raw_camera_media_close(handle: u32, reason_ptr: u32, reason_len: u32) -> i32;
+        #[link_name = "artifact_open"]
+        fn raw_artifact_open(ptr: u32, len: u32) -> i32;
+        #[link_name = "artifact_write"]
+        fn raw_artifact_write(
+            handle: u32,
+            meta_ptr: u32,
+            meta_len: u32,
+            payload_ptr: u32,
+            payload_len: u32,
+        ) -> i32;
+        #[link_name = "artifact_commit"]
+        fn raw_artifact_commit(
+            handle: u32,
+            req_ptr: u32,
+            req_len: u32,
+            resp_ptr: u32,
+            resp_len: u32,
+        ) -> i32;
+        #[link_name = "artifact_abort"]
+        fn raw_artifact_abort(handle: u32, reason_ptr: u32, reason_len: u32) -> i32;
     }
 
     fn ptr(data: &[u8]) -> u32 {
@@ -253,6 +289,38 @@ mod wasm {
 
     pub(crate) fn camera_media_close(handle: u32, reason: &[u8]) -> i32 {
         unsafe { raw_camera_media_close(handle, ptr(reason), reason.len() as u32) }
+    }
+
+    pub(crate) fn artifact_open(req: &[u8]) -> i32 {
+        unsafe { raw_artifact_open(ptr(req), req.len() as u32) }
+    }
+
+    pub(crate) fn artifact_write(handle: u32, meta: &[u8], payload: &[u8]) -> i32 {
+        unsafe {
+            raw_artifact_write(
+                handle,
+                ptr(meta),
+                meta.len() as u32,
+                ptr(payload),
+                payload.len() as u32,
+            )
+        }
+    }
+
+    pub(crate) fn artifact_commit(handle: u32, req: &[u8], resp: &mut [u8]) -> i32 {
+        unsafe {
+            raw_artifact_commit(
+                handle,
+                ptr(req),
+                req.len() as u32,
+                mut_ptr(resp),
+                resp.len() as u32,
+            )
+        }
+    }
+
+    pub(crate) fn artifact_abort(handle: u32, reason: &[u8]) -> i32 {
+        unsafe { raw_artifact_abort(handle, ptr(reason), reason.len() as u32) }
     }
 
     #[unsafe(no_mangle)]
@@ -429,6 +497,38 @@ pub(crate) fn camera_media_close(handle: u32, reason: &[u8]) -> i32 {
         .lock()
         .expect("host mutex poisoned")
         .camera_media_close(handle, reason)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_open(req: &[u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_open(req)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_write(handle: u32, meta: &[u8], payload: &[u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_write(handle, meta, payload)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_commit(handle: u32, req: &[u8], resp: &mut [u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_commit(handle, req, resp)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_abort(handle: u32, reason: &[u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_abort(handle, reason)
 }
 
 #[cfg(target_arch = "wasm32")]
