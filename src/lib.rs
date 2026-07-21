@@ -10,6 +10,8 @@ mod error;
 mod execute;
 mod host;
 mod http;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod local;
 mod log;
 mod memory;
 mod plugin_inputs;
