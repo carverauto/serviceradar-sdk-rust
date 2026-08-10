@@ -77,7 +77,7 @@ ServiceRadar plugins are checker-style modules that run inside a host agent/runt
 
 Important domain concepts:
 - Plugins receive host-provided configuration, typically JSON-decoded into a typed config struct.
-- Plugins submit a `serviceradar.plugin_result.v1` payload describing status, summary, metrics, labels, timestamps, UI display widgets, optional OCSF events, and alert-promotion hints.
+- Plugins submit a `serviceradar.plugin_result.v1` payload describing status, summary, labels, timestamps, UI display widgets, optional OCSF events, and alert-promotion hints. Time-series metrics are not serialized in plugin results; plugins emit canonical `serviceradar.metric.v1.MetricBatch` protobuf payloads through first-class telemetry instead.
 - Policy-driven assignments may deliver `serviceradar.plugin_inputs.v1`, which contains resolved entity inputs such as devices or interfaces. The SDK should provide typed parsing and iteration helpers for this payload.
 - Outbound network access is host-mediated. HTTP, TCP, UDP, WebSocket, and camera/media interactions are brokered by the ServiceRadar runtime rather than by direct guest sockets.
 - Event support includes OCSF Event Log Activity payloads, optional `alert_hint`, and `condition_id` fields used by the control plane for promotion and de-duplication.

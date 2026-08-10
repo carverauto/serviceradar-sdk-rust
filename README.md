@@ -14,11 +14,13 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Camera/media helpers and RTSP parsing/depacketization utilities
 - Signal schema/display contract references for package-managed logs and events
 - Device discovery/enrichment payload helpers for inventory-producing plugins
+- Advisory-feed contract builders and gateway-mediated artifact staging helpers
+- First-class metric telemetry helpers for canonical `serviceradar.metric.v1` payloads
 - Example plugins for HTTP, TCP, UDP, and widget-rich results
 
 The Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go` remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
 
-In practice that means the common path uses concrete Rust domain types like `PluginResult`, `Metric`, `Widget`, `Event`, and `HttpClient`, while Go-specific convenience aliases are intentionally avoided on the public surface.
+In practice that means the common path uses concrete Rust domain types like `PluginResult`, `Widget`, `Event`, and `HttpClient`, while Go-specific convenience aliases are intentionally avoided on the public surface.
 
 ## Install
 
@@ -61,11 +63,6 @@ pub extern "C" fn run_check() {
         Ok(sdk::PluginResult::new()
             .with_summary(format!("http {} in {:.0}ms", response.status, latency_ms))
             .with_thresholds(latency_ms, thresholds.warn, thresholds.crit)
-            .with_metric_spec(
-                sdk::Metric::new("latency_ms", latency_ms)
-                    .with_unit("ms")
-                    .with_thresholds(&thresholds),
-            )
             .with_widget(sdk::Widget::stat_card(
                 "Latency",
                 format!("{latency_ms:.0}ms"),
@@ -116,6 +113,123 @@ sdk::emit_telemetry(
 ```
 
 `emit_telemetry` serializes the same JSON host ABI payload as the Go SDK and requires the plugin manifest capability `emit_telemetry`.
+
+Do not put time-series metrics in `serviceradar.plugin_result.v1`. Result
+metrics are no longer serialized by the SDK and are rejected by current
+ServiceRadar agents. Emit canonical metric protobuf batches with
+`TelemetryRecord::serviceradar_metric_batch` instead:
+
+```rust
+let record = sdk::TelemetryRecord::serviceradar_metric_batch(
+    "metric-event-1",
+    sdk::MetricBatch {
+        resource: sdk::MetricResource {
+            service_name: "http-check".to_string(),
+            service_type: "wasm-plugin".to_string(),
+            ..Default::default()
+        },
+        ingest_identity: sdk::MetricIngestIdentity {
+            source: "plugin-metrics".to_string(),
+            producer_id: "http-check".to_string(),
+            producer_kind: "wasm-plugin".to_string(),
+            ..Default::default()
+        },
+        metrics: vec![sdk::Metric {
+            name: "http.response_time_ms".to_string(),
+            metric_type: "plugin".to_string(),
+            kind: sdk::MetricKind::Gauge,
+            unit: "ms".to_string(),
+            points: vec![sdk::MetricPoint {
+                value: 12.5,
+                raw_value: "12.5".to_string(),
+                raw_value_type: sdk::MetricValueType::Double,
+                observed_at_unix_nano: 123,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    },
+);
+
+sdk::emit_telemetry(
+    sdk::TelemetryBatch::new(vec![record])
+        .with_source(sdk::TelemetrySource::new("http-check", "default")),
+)?;
+```
+
+`TelemetryRecord::serviceradar_metric_batch` uses a dependency-free protobuf
+encoder so wasm plugins do not need to link a full protobuf runtime. If a plugin
+already has encoded protobuf bytes from another generator, use
+`TelemetryRecord::serviceradar_metrics`.
+
+## Advisory Feed Producers
+
+Plugins that produce vulnerability intelligence should emit normalized advisory
+batches through the standard plugin result payload. Provider-specific download,
+schema validation, pointer JSON handling, archive extraction, and feed-specific
+normalization stay inside the plugin. ServiceRadar core consumes only the
+generic `serviceradar.advisory_feed.contract.v1` contract.
+
+For large feed snapshots, stage the raw or normalized artifact through the
+gateway-mediated artifact API before submitting the advisory batch:
+
+```rust
+let mut stream = sdk::ArtifactStream::open(
+    sdk::ArtifactOpenRequest::new("vulnerability-feeds/example/sha256.json")
+        .with_content_type("application/json"),
+)?;
+stream.write(feed_json.as_bytes())?;
+let artifact = stream.commit(
+    sdk::ArtifactCommitRequest::new().with_sha256(feed_sha256),
+)?;
+
+let batch = sdk::AdvisoryFeedBatch::new(
+    "com.example.feed",
+    sdk::AdvisorySource::new("example", "normalized"),
+    sdk::AdvisorySnapshot::new(artifact.object_key, artifact.sha256),
+)
+.with_advisory(
+    sdk::AdvisoryRecord::new("CVE-2026-1")
+        .with_cve("CVE-2026-1")
+        .with_severity("high")
+        .with_coordinate(
+            sdk::AffectedCoordinate::purl("pkg:deb/debian/openssl@3.0.13?arch=amd64"),
+        ),
+);
+
+let result = sdk::PluginResult::ok("submitted advisory feed")
+    .with_advisory_feed(batch);
+# Ok::<_, sdk::Error>(())
+```
+
+Plugins need the `advisory-feed:v1` capability to submit advisory batches and
+`artifact-staging:v1` when using the artifact stream helpers. These APIs are
+host and agent-gateway mediated; plugins never receive direct object-store
+credentials.
+
+Scheduled feed downloads are declared in the plugin package manifest with
+`producer_schedules`. The platform persists the declaration, renders operator
+settings, and dispatches runs through `plugin.run_action`; the plugin keeps all
+provider-specific fetch, checksum, archive, and normalization logic.
+
+```rust
+let mut payload_template = std::collections::BTreeMap::new();
+payload_template.insert("feed_key".to_string(), serde_json::json!("primary"));
+
+let schedule = sdk::ProducerScheduleContract::new(
+    "daily_advisory_refresh",
+    "Refresh advisory feed",
+    "advisory.refresh",
+)
+.with_cadence(86_400, 3_600, 2_592_000)
+.with_jitter_seconds(120)
+.with_payload_template(payload_template);
+```
+
+Plugins that declare schedules should include `producer-schedule:v1` in their
+manifest capabilities. The scheduled invocation payload uses
+`serviceradar.producer_schedule_run.v1`.
 
 Build native examples:
 

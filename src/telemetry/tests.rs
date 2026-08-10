@@ -1,12 +1,17 @@
 use std::collections::BTreeMap;
 
+use base64::{Engine as _, engine::general_purpose};
 use serde_json::Value;
 
 use crate::error::{HOST_ERR_NOT_FOUND, HOST_ERR_OK};
 use crate::host::{TestHostBackend, install_test_backend};
+use crate::metric_envelope::{
+    METRIC_ENVELOPE_SCHEMA_VERSION, Metric, MetricBatch, MetricKind, MetricPoint,
+};
 use crate::result::{
     OcsfEvent, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT, SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG,
-    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity, SignalSchemaRef,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS, SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity,
+    SignalSchemaRef,
 };
 
 use super::{TelemetryBatch, TelemetryRecord, TelemetrySource, emit_telemetry};
@@ -101,4 +106,75 @@ fn otel_log_record_uses_otel_payload_kind() {
         .expect("build otel log telemetry record");
 
     assert_eq!(record.payload_kind, SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG);
+}
+
+#[test]
+fn metric_record_serializes_base64_protobuf_payload() {
+    let proto_payload = [0x0a, 0x16, b's', b'e', b'r', b'v', b'i', b'c', b'e'];
+    let record = TelemetryRecord::serviceradar_metrics("metric-1", &proto_payload);
+
+    let payload = TelemetryBatch::new(vec![record])
+        .with_source(TelemetrySource::new("env-sensor", "rack-a"))
+        .serialize()
+        .expect("serialize telemetry batch");
+    let decoded: Value = serde_json::from_slice(&payload).expect("decode telemetry json");
+    let record = &decoded["records"][0];
+
+    assert_eq!(
+        record["payload_kind"],
+        Value::String(SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS.to_string())
+    );
+    let encoded = record["payload"].as_str().expect("payload string");
+    let decoded_payload = general_purpose::STANDARD
+        .decode(encoded)
+        .expect("payload base64");
+    assert_eq!(decoded_payload, proto_payload);
+}
+
+#[test]
+fn metric_batch_record_serializes_dependency_free_metric_proto_payload() {
+    let record = TelemetryRecord::serviceradar_metric_batch(
+        "metric-1",
+        MetricBatch {
+            metrics: vec![Metric {
+                name: "plugin.camera_total".to_string(),
+                metric_type: "plugin".to_string(),
+                kind: MetricKind::Gauge,
+                points: vec![MetricPoint {
+                    value: 2.0,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
+
+    let payload = TelemetryBatch::new(vec![record])
+        .with_source(TelemetrySource::new("camera-plugin", "front-door"))
+        .serialize()
+        .expect("serialize telemetry batch");
+    let decoded: Value = serde_json::from_slice(&payload).expect("decode telemetry json");
+    let record = &decoded["records"][0];
+    let encoded = record["payload"].as_str().expect("payload string");
+    let decoded_payload = general_purpose::STANDARD
+        .decode(encoded)
+        .expect("payload base64");
+
+    assert_eq!(
+        record["payload_kind"],
+        Value::String(SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS.to_string())
+    );
+    assert!(
+        decoded_payload
+            .windows(METRIC_ENVELOPE_SCHEMA_VERSION.len())
+            .any(|window| window == METRIC_ENVELOPE_SCHEMA_VERSION.as_bytes()),
+        "metric schema version missing from protobuf payload"
+    );
+    assert!(
+        decoded_payload
+            .windows("plugin.camera_total".len())
+            .any(|window| window == b"plugin.camera_total"),
+        "metric name missing from protobuf payload"
+    );
 }
