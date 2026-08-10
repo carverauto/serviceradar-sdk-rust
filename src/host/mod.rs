@@ -127,6 +127,28 @@ impl Drop for NativeHostGuard {
     }
 }
 
+/// Runs `f` while holding the backend install lock.
+///
+/// A test that asserts on the RESTORED backend - "after `run_local_host`, an SDK
+/// call fails again because no host is installed" - cannot make that assertion
+/// safely on its own. `NativeHostGuard` releases the install lock when it drops,
+/// so between the drop and the assertion any other test is free to install its
+/// own backend, and the SDK call then succeeds against that one. The tests run
+/// in parallel and several modules install backends (websocket, camera_media,
+/// config, local), so the window is real: this reproduced as roughly 2 failures
+/// in 10 runs of `cargo test --all-targets`.
+///
+/// Holding the lock across the assertion closes it, because every installer
+/// takes the same lock for the whole life of its guard.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(crate) fn with_install_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _lock = backend_install_lock()
+        .lock()
+        .expect("native host install lock poisoned");
+
+    f()
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn install_native_backend(next: Box<dyn HostBackend>) -> NativeHostGuard {
     let lock = backend_install_lock()
