@@ -1,4 +1,6 @@
 mod action;
+mod advisory;
+mod artifact;
 mod camera_http;
 mod camera_media;
 mod camera_plugin;
@@ -12,7 +14,9 @@ mod host;
 mod http;
 mod log;
 mod memory;
+mod metric_envelope;
 mod plugin_inputs;
+mod producer_schedule;
 mod result;
 mod rtsp;
 mod tcp;
@@ -25,6 +29,15 @@ pub use action::{
     ActionHostConfig, ActionInvocation, ActionPollMode, ActionResult, ActionSafety, ActionScope,
     ActionStatus, ActionTargetResult, ActionTargetSnapshot, load_action_config,
     parse_action_config, submit_action_result,
+};
+pub use advisory::{
+    ADVISORY_FEED_CONTRACT_VERSION, AdvisoryFeedBatch, AdvisoryRecord, AdvisorySnapshot,
+    AdvisorySource, AffectedCoordinate, CAPABILITY_ADVISORY_FEED_V1, COORDINATE_TYPE_CPE,
+    COORDINATE_TYPE_PURL, COORDINATE_TYPE_VENDOR_PRODUCT,
+};
+pub use artifact::{
+    ArtifactCommitRequest, ArtifactCommitResponse, ArtifactOpenRequest, ArtifactStream,
+    ArtifactWriteMetadata, MAX_ARTIFACT_COMMIT_RESPONSE_BYTES,
 };
 pub use camera_http::CameraHttpClient;
 pub use camera_media::{MediaChunk, MediaHeartbeat, MediaOpenRequest, MediaStream};
@@ -49,13 +62,25 @@ pub use execute::{ExecuteErrorWithResult, execute, execute_partial, submit_resul
 pub use http::{HttpClient, HttpRequest, HttpResponse, MAX_HTTP_RESPONSE_BYTES};
 pub use log::{LOG, LogLevel, Logger};
 pub use memory::{alloc, dealloc};
+pub use metric_envelope::{
+    METRIC_ENVELOPE_SCHEMA_VERSION, Metric, MetricBatch, MetricIngestIdentity, MetricKind,
+    MetricPoint, MetricResource, MetricStringMapEntry, MetricTemporality, MetricValueType,
+    marshal_metric_batch,
+};
 pub use plugin_inputs::{
     CredentialBrokerGrant, CredentialPolicySnapshot, PLUGIN_INPUTS_SCHEMA_V1, PluginInput,
     PluginInputItem, PluginInputItems, PluginInputsPayload, TargetContext,
     parse_plugin_inputs_json, parse_plugin_inputs_map,
 };
+pub use producer_schedule::{
+    CAPABILITY_PRODUCER_SCHEDULE_V1, PRODUCER_SCHEDULE_COMMAND_PLUGIN_RUN_ACTION,
+    PRODUCER_SCHEDULE_DISPATCH_ASSIGNMENT, PRODUCER_SCHEDULE_DISPATCH_PACKAGE,
+    PRODUCER_SCHEDULE_DISPATCH_TARGET_QUERY, PRODUCER_SCHEDULE_RUN_SCHEMA_V1,
+    PRODUCER_SCHEDULE_TYPE_CRON, PRODUCER_SCHEDULE_TYPE_INTERVAL, PRODUCER_SCHEDULE_TYPE_MANUAL,
+    ProducerScheduleContract,
+};
 pub use result::{
-    Event, Metric, Result as PluginResult, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+    Event, Result as PluginResult, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
     SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION,
     SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND, SIGNAL_SCHEMA_METADATA_PRODUCER_ID,
     SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION, SIGNAL_SCHEMA_METADATA_SCHEMA_ID,

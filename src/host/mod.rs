@@ -21,6 +21,22 @@ pub(crate) trait HostBackend: Send {
         HOST_ERR_NOT_FOUND
     }
 
+    fn artifact_open(&mut self, _req: &[u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
+    fn artifact_write(&mut self, _handle: u32, _meta: &[u8], _payload: &[u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
+    fn artifact_commit(&mut self, _handle: u32, _req: &[u8], _resp: &mut [u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
+    fn artifact_abort(&mut self, _handle: u32) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
     fn http_request(&mut self, _req: &[u8], _resp: &mut [u8]) -> i32 {
         HOST_ERR_NOT_FOUND
     }
@@ -107,6 +123,26 @@ mod wasm {
         fn raw_submit_result(ptr: u32, size: u32) -> i32;
         #[link_name = "emit_telemetry"]
         fn raw_emit_telemetry(ptr: u32, size: u32) -> i32;
+        #[link_name = "artifact_open"]
+        fn raw_artifact_open(req_ptr: u32, req_len: u32) -> i32;
+        #[link_name = "artifact_write"]
+        fn raw_artifact_write(
+            handle: u32,
+            meta_ptr: u32,
+            meta_len: u32,
+            payload_ptr: u32,
+            payload_len: u32,
+        ) -> i32;
+        #[link_name = "artifact_commit"]
+        fn raw_artifact_commit(
+            handle: u32,
+            req_ptr: u32,
+            req_len: u32,
+            resp_ptr: u32,
+            resp_len: u32,
+        ) -> i32;
+        #[link_name = "artifact_abort"]
+        fn raw_artifact_abort(handle: u32) -> i32;
         #[link_name = "http_request"]
         fn raw_http_request(req_ptr: u32, req_len: u32, resp_ptr: u32, resp_len: u32) -> i32;
         #[link_name = "tcp_connect"]
@@ -180,6 +216,38 @@ mod wasm {
 
     pub(crate) fn emit_telemetry(payload: &[u8]) -> i32 {
         unsafe { raw_emit_telemetry(ptr(payload), payload.len() as u32) }
+    }
+
+    pub(crate) fn artifact_open(req: &[u8]) -> i32 {
+        unsafe { raw_artifact_open(ptr(req), req.len() as u32) }
+    }
+
+    pub(crate) fn artifact_write(handle: u32, meta: &[u8], payload: &[u8]) -> i32 {
+        unsafe {
+            raw_artifact_write(
+                handle,
+                ptr(meta),
+                meta.len() as u32,
+                ptr(payload),
+                payload.len() as u32,
+            )
+        }
+    }
+
+    pub(crate) fn artifact_commit(handle: u32, req: &[u8], resp: &mut [u8]) -> i32 {
+        unsafe {
+            raw_artifact_commit(
+                handle,
+                ptr(req),
+                req.len() as u32,
+                mut_ptr(resp),
+                resp.len() as u32,
+            )
+        }
+    }
+
+    pub(crate) fn artifact_abort(handle: u32) -> i32 {
+        unsafe { raw_artifact_abort(handle) }
     }
 
     pub(crate) fn http_request(req: &[u8], resp: &mut [u8]) -> i32 {
@@ -317,6 +385,38 @@ pub(crate) fn emit_telemetry(payload: &[u8]) -> i32 {
         .lock()
         .expect("host mutex poisoned")
         .emit_telemetry(payload)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_open(req: &[u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_open(req)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_write(handle: u32, meta: &[u8], payload: &[u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_write(handle, meta, payload)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_commit(handle: u32, req: &[u8], resp: &mut [u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_commit(handle, req, resp)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn artifact_abort(handle: u32) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .artifact_abort(handle)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
