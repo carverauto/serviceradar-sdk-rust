@@ -163,6 +163,65 @@ encoder so wasm plugins do not need to link a full protobuf runtime. If a plugin
 already has encoded protobuf bytes from another generator, use
 `TelemetryRecord::serviceradar_metrics`.
 
+## Plugin Manifest
+
+`PluginManifest` builds the `plugin.yaml` that ServiceRadar core accepts when a
+package is uploaded, and `validate` mirrors core's own rules so a bad manifest
+fails at build time instead of at upload time:
+
+```rust
+use serviceradar_sdk_rust::{
+    OUTPUTS_PLUGIN_RESULT, PluginManifest, RUNTIME_WASI_PREVIEW1,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT, SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT,
+    SignalSchemaContribution,
+};
+
+let schema = SignalSchemaContribution::new(
+    "com.carverauto.security.scan_activity",
+    "1.0.0",
+    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
+)
+.with_ocsf("1.9.0-dev", 6007, 600_701);
+
+let manifest = PluginManifest {
+    id: "security-sample".to_string(),
+    name: "Security Sample".to_string(),
+    version: "1.0.0".to_string(),
+    entrypoint: "run_check".to_string(),
+    runtime: Some(RUNTIME_WASI_PREVIEW1.to_string()),
+    capabilities: vec!["get_config".to_string(), "submit_result".to_string()],
+    outputs: OUTPUTS_PLUGIN_RESULT.to_string(),
+    signal_schemas: vec![schema],
+    ..Default::default()
+};
+
+let payload = manifest.serialize()?; // validates, then encodes
+```
+
+`SignalSchemaContribution::new` derives the conventional bundle paths
+(`schemas/<name>.schema.json`, `display/<name>.display.json`) and the display
+contract id/version from the schema id; override any field afterwards.
+
+`validate` returns every rejection at once as `Vec<ManifestValidationError>`,
+each carrying the offending field `path`. It mirrors
+`ServiceRadar.Plugins.Manifest` in core, which is strict on purpose:
+
+- `capabilities`, `runtime`, and `outputs` are checked against core's allowlists.
+- `signal_type` must be `event` or `log`; `payload_kind` must be `ocsf_event` or
+  `otel_log`.
+- Schema and display-contract versions must be semver.
+- Bundle paths must be relative `.json` files and may not traverse directories.
+
+The signal schema field set is **closed**. Core rejects any key it does not
+recognize with `signal_schemas[i].<key> is not allowed`, so adding a field here
+without a matching change in core produces manifests that fail on upload.
+
+This module is kept at parity with `serviceradar-sdk-go`: both SDKs ship the
+same `testdata/sdk_generated_security_manifest.json`, and each asserts that
+equivalent builder calls reproduce it. A change to the manifest contract in one
+SDK fails the other's fixture test.
+
 ## Advisory Feed Producers
 
 Plugins that produce vulnerability intelligence should emit normalized advisory
