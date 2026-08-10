@@ -220,6 +220,59 @@ fn new_signal_schema_contribution_derives_bundle_paths() {
 }
 
 #[test]
+fn bundle_path_rule_matches_core_pattern() {
+    for valid in [
+        "schemas/scan_activity.schema.json",
+        "a.json",
+        "a/b/c-d_e.json",
+    ] {
+        let mut manifest = security_fixture_manifest();
+        manifest.signal_schemas[0].payload_schema = valid.to_string();
+
+        assert!(
+            manifest.validate().is_ok(),
+            "{valid} should be accepted as a bundle path"
+        );
+    }
+
+    for invalid in [
+        "/absolute/path.json",
+        "schemas/../secret.json",
+        "schemas/scan_activity.yaml",
+        "schemas//double.json",
+        ".hidden.json",
+        "",
+    ] {
+        let mut manifest = security_fixture_manifest();
+        manifest.signal_schemas[0].payload_schema = invalid.to_string();
+
+        assert!(
+            error_paths(&manifest).contains(&"signal_schemas[0].payload_schema".to_string()),
+            "{invalid:?} should be rejected as a bundle path"
+        );
+    }
+}
+
+#[test]
+fn signal_ref_rule_matches_core_pattern() {
+    for invalid in [
+        "Uppercase.id",
+        ".leading.dot",
+        "-leading-dash",
+        "has space",
+        "",
+    ] {
+        let mut manifest = security_fixture_manifest();
+        manifest.signal_schemas[0].id = invalid.to_string();
+
+        assert!(
+            error_paths(&manifest).contains(&"signal_schemas[0].id".to_string()),
+            "{invalid:?} should be rejected as a signal ref"
+        );
+    }
+}
+
+#[test]
 fn semver_rule_matches_core_pattern() {
     for valid in ["1.0.0", "1.9.0-dev", "0.0.1", "2.3.4+build.5"] {
         let mut manifest = security_fixture_manifest();
