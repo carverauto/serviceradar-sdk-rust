@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
+use crate::advisory::AdvisoryFeedBatch;
 use crate::device_discovery::DeviceDiscovery;
 use crate::error::SdkResult;
 use crate::plugin_inputs::TargetContext;
@@ -127,55 +128,6 @@ impl ThresholdSpec {
     }
 
     pub fn with_range(mut self, min: f64, max: f64) -> Self {
-        self.min = Some(min);
-        self.max = Some(max);
-        self
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Metric {
-    pub name: String,
-    pub value: f64,
-    #[serde(skip_serializing_if = "String::is_empty", default)]
-    pub unit: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub warn: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub crit: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max: Option<f64>,
-}
-
-impl Metric {
-    pub fn new(name: impl Into<String>, value: f64) -> Self {
-        Self {
-            name: name.into(),
-            value,
-            unit: String::new(),
-            warn: None,
-            crit: None,
-            min: None,
-            max: None,
-        }
-    }
-
-    pub fn with_unit(mut self, unit: impl Into<String>) -> Self {
-        self.unit = unit.into();
-        self
-    }
-
-    pub fn with_thresholds(mut self, thresholds: &ThresholdSpec) -> Self {
-        self.warn = thresholds.warn;
-        self.crit = thresholds.crit;
-        self.min = thresholds.min;
-        self.max = thresholds.max;
-        self
-    }
-
-    pub fn with_bounds(mut self, min: f64, max: f64) -> Self {
         self.min = Some(min);
         self.max = Some(max);
         self
@@ -354,6 +306,7 @@ pub const SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT: &str = "event";
 pub const SIGNAL_SCHEMA_SIGNAL_TYPE_LOG: &str = "log";
 pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT: &str = "ocsf_event";
 pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG: &str = "otel_log";
+pub const SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS: &str = "serviceradar_metrics";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SignalSchemaRef {
@@ -378,8 +331,6 @@ pub struct Result {
     details: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     perfdata: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    metrics: Vec<Metric>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     labels: BTreeMap<String, String>,
     #[serde(skip)]
@@ -402,6 +353,8 @@ pub struct Result {
     device_uid: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     device_discovery: Vec<DeviceDiscovery>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    advisory_feeds: Vec<AdvisoryFeedBatch>,
 }
 
 impl Result {
@@ -411,7 +364,6 @@ impl Result {
             summary: None,
             details: None,
             perfdata: None,
-            metrics: Vec::new(),
             labels: BTreeMap::new(),
             observed_at: None,
             schema_version: Some(1),
@@ -423,6 +375,7 @@ impl Result {
             monitored_service_id: None,
             device_uid: None,
             device_discovery: Vec::new(),
+            advisory_feeds: Vec::new(),
         }
     }
 
@@ -465,10 +418,6 @@ impl Result {
 
     pub fn details(&self) -> Option<&str> {
         self.details.as_deref()
-    }
-
-    pub fn metrics(&self) -> &[Metric] {
-        &self.metrics
     }
 
     pub fn labels(&self) -> &BTreeMap<String, String> {
@@ -568,43 +517,6 @@ impl Result {
 
     pub fn with_label(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.add_label(key, value);
-        self
-    }
-
-    pub fn add_metric_spec(&mut self, metric: Metric) {
-        self.metrics.push(metric);
-    }
-
-    pub fn with_metric_spec(mut self, metric: Metric) -> Self {
-        self.add_metric_spec(metric);
-        self
-    }
-
-    pub fn add_metric(
-        &mut self,
-        name: impl Into<String>,
-        value: f64,
-        unit: impl Into<String>,
-        thresholds: Option<&ThresholdSpec>,
-    ) {
-        let metric = match thresholds {
-            Some(thresholds) => Metric::new(name, value)
-                .with_unit(unit)
-                .with_thresholds(thresholds),
-            None => Metric::new(name, value).with_unit(unit),
-        };
-
-        self.add_metric_spec(metric);
-    }
-
-    pub fn with_metric(
-        mut self,
-        name: impl Into<String>,
-        value: f64,
-        unit: impl Into<String>,
-        thresholds: Option<&ThresholdSpec>,
-    ) -> Self {
-        self.add_metric(name, value, unit, thresholds);
         self
     }
 
@@ -744,6 +656,15 @@ impl Result {
         self
     }
 
+    pub fn add_advisory_feed(&mut self, batch: AdvisoryFeedBatch) {
+        self.advisory_feeds.push(batch);
+    }
+
+    pub fn with_advisory_feed(mut self, batch: AdvisoryFeedBatch) -> Self {
+        self.add_advisory_feed(batch);
+        self
+    }
+
     pub fn request_immediate_alert(&mut self, condition_id: impl Into<String>) {
         self.alert_hint = true;
         self.condition_id = Some(condition_id.into());
@@ -785,7 +706,6 @@ impl Result {
             summary,
             details: self.details.clone(),
             perfdata: self.perfdata.clone(),
-            metrics: self.metrics.clone(),
             labels: self.labels.clone(),
             observed_at,
             schema_version: self.schema_version.unwrap_or(1),
@@ -797,6 +717,7 @@ impl Result {
             monitored_service_id: self.monitored_service_id.clone(),
             device_uid: self.device_uid.clone(),
             device_discovery: self.device_discovery.clone(),
+            advisory_feeds: self.advisory_feeds.clone(),
         })
     }
 }
@@ -905,8 +826,6 @@ struct SerializableResult {
     details: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     perfdata: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    metrics: Vec<Metric>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     labels: BTreeMap<String, String>,
     observed_at: String,
@@ -927,6 +846,8 @@ struct SerializableResult {
     device_uid: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     device_discovery: Vec<DeviceDiscovery>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    advisory_feeds: Vec<AdvisoryFeedBatch>,
 }
 
 const OCSF_CLASS_EVENT_LOG_ACTIVITY: i32 = 1008;

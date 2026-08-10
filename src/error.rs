@@ -75,6 +75,7 @@ pub enum Error {
     TcpConnectionNotInitialized,
     WebSocketNotInitialized,
     CameraMediaStreamNotInitialized,
+    ArtifactStreamNotInitialized,
     CameraHostRequired,
     InvalidCameraScheme,
     InvalidPluginInputs(String),
@@ -103,6 +104,7 @@ impl Display for Error {
             Self::CameraMediaStreamNotInitialized => {
                 f.write_str("camera media stream not initialized")
             }
+            Self::ArtifactStreamNotInitialized => f.write_str("artifact stream not initialized"),
             Self::CameraHostRequired => f.write_str("host is required"),
             Self::InvalidCameraScheme => f.write_str("scheme must be http or https"),
             Self::InvalidPluginInputs(msg) => write!(f, "invalid plugin inputs payload: {msg}"),

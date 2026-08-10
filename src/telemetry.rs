@@ -1,18 +1,21 @@
 use std::collections::BTreeMap;
 
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::SdkResult;
 use crate::host;
+use crate::metric_envelope::{MetricBatch, marshal_metric_batch};
 use crate::result::{
     OcsfEvent, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_ID,
     SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION, SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND,
     SIGNAL_SCHEMA_METADATA_PRODUCER_ID, SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION,
     SIGNAL_SCHEMA_METADATA_SCHEMA_ID, SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION,
     SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
-    SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG, SignalSchemaRef,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG, SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS,
+    SignalSchemaRef,
 };
 
 const TELEMETRY_METADATA_PREFIX: &str = "serviceradar.signal_schema.";
@@ -84,6 +87,26 @@ impl TelemetryRecord {
             payload: serde_json::to_value(log)?,
             metadata: BTreeMap::new(),
         })
+    }
+
+    pub fn serviceradar_metrics(event_id: impl Into<String>, metric_batch_proto: &[u8]) -> Self {
+        let now = now_unix_nanos();
+
+        Self {
+            event_id: empty_string_to_none(event_id.into()),
+            observed_time_unix_nano: Some(now),
+            event_time_unix_nano: Some(now),
+            payload_kind: SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS.to_string(),
+            payload: Value::String(general_purpose::STANDARD.encode(metric_batch_proto)),
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    pub fn serviceradar_metric_batch(event_id: impl Into<String>, mut batch: MetricBatch) -> Self {
+        if batch.emitted_at_unix_nano == 0 {
+            batch.emitted_at_unix_nano = now_unix_nanos() as u64;
+        }
+        Self::serviceradar_metrics(event_id, &marshal_metric_batch(batch))
     }
 
     pub fn attach_signal_schema_ref(&mut self, signal_schema: &SignalSchemaRef) {
