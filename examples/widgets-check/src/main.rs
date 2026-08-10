@@ -37,11 +37,6 @@ pub extern "C" fn run_check() {
         Ok(sdk::PluginResult::new()
             .with_summary(format!("http {} in {:.0}ms", response.status, latency_ms))
             .with_thresholds(latency_ms, thresholds.warn, thresholds.crit)
-            .with_metric_spec(
-                sdk::Metric::new("latency_ms", latency_ms)
-                    .with_unit("ms")
-                    .with_thresholds(&thresholds),
-            )
             .with_widget(sdk::Widget::stat_card(
                 "Latency",
                 format!("{latency_ms:.0}ms"),

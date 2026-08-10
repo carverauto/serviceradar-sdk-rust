@@ -4,7 +4,7 @@ use std::fs;
 use serde_json::Value;
 
 use super::{
-    DisplayWidget, Metric, OcsfEvent, Result, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
+    DisplayWidget, OcsfEvent, Result, SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT,
     SIGNAL_SCHEMA_METADATA_SCHEMA_ID, SIGNAL_SCHEMA_METADATA_SERVICE_RADAR,
     SIGNAL_SCHEMA_METADATA_SIGNAL_SCHEMA, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
     SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity, SignalSchemaRef, Status, ThresholdSpec,
@@ -15,13 +15,11 @@ use crate::{
 };
 
 #[test]
-fn serialize_includes_metrics_and_events() {
+fn serialize_includes_events_and_alert_hints() {
     let mut result = Result::new();
-    let thresholds = ThresholdSpec::new(50.0, 100.0);
 
     result.set_status(Status::Warning);
     result.set_summary("latency high");
-    result.add_metric("latency_ms", 75.0, "ms", Some(&thresholds));
     result.add_stat_card("Latency", "75ms", "warning");
     result.emit_event(Severity::Warning, "latency high", "latency_threshold");
     result.request_immediate_alert("latency_threshold");
@@ -222,6 +220,10 @@ fn service_monitoring_result_fixture_decodes() {
 
     assert_eq!(decoded["check_instance_id"], "check-1");
     assert_eq!(decoded["monitored_service_id"], "service-1");
+    assert!(
+        decoded.get("metrics").is_none(),
+        "service monitoring fixture must not contain plugin-result metrics"
+    );
 }
 
 #[test]
@@ -240,12 +242,6 @@ fn status_and_severity_support_display_and_parsing() {
 
 #[test]
 fn domain_type_constructors_build_expected_shapes() {
-    let metric = Metric::new("latency_ms", 42.0)
-        .with_unit("ms")
-        .with_thresholds(&ThresholdSpec::new(50.0, 100.0).with_range(0.0, 500.0));
-    assert_eq!(metric.unit, "ms");
-    assert_eq!(metric.warn, Some(50.0));
-
     let table = DisplayWidget::table(
         BTreeMap::from([("Status".to_string(), "200".to_string())]),
         "full",

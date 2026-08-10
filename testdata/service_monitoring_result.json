@@ -1,13 +1,6 @@
 {
   "status": "OK",
   "summary": "HTTP 200",
-  "metrics": [
-    {
-      "name": "http.response_time_ms",
-      "value": 42,
-      "unit": "ms"
-    }
-  ],
   "labels": {
     "check_instance_id": "check-1",
     "descriptor_id": "http.url.availability",
