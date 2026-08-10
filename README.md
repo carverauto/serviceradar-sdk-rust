@@ -230,6 +230,47 @@ let schedule = sdk::ProducerScheduleContract::new(
 Plugins that declare schedules should include `producer-schedule:v1` in their
 manifest capabilities. The scheduled invocation payload uses
 `serviceradar.producer_schedule_run.v1`.
+## Source-native local development
+
+Native builds expose `serviceradar_sdk_rust::local`, which installs a local
+development host for ordinary config, HTTP, logging, telemetry, and result SDK
+calls. This path does not require a Wasm build, signature, registry, or cluster.
+
+`LocalInputs` reads public config and optional action-invocation JSON from files
+or environment variables. It also reads an optional `.env` file; process
+environment values override file values. Credential fields use the
+`SERVICERADAR_CREDENTIAL_` prefix and remain separate from runtime config:
+
+```dotenv
+SERVICERADAR_PLUGIN_CONFIG_FILE=testdata/config.json
+SERVICERADAR_PLUGIN_ACTION_FILE=testdata/action.json
+SERVICERADAR_CREDENTIAL_USERNAME=local-user
+SERVICERADAR_CREDENTIAL_PASSWORD=local-password
+```
+
+```rust
+use serviceradar_sdk_rust::local::{
+    LocalHostOptions, LocalInputOptions, LocalInputs, run_local_host,
+};
+
+let inputs = LocalInputs::load(LocalInputOptions::default())?;
+let runtime_config = inputs.runtime_config_json()?;
+let credentials = inputs.credentials();
+
+let (capture, result) = run_local_host(
+    LocalHostOptions {
+        config_json: runtime_config,
+        http_handler: Some(new_local_broker(credentials)),
+    },
+    run_plugin,
+);
+result?;
+```
+
+The caller-supplied HTTP handler is the trusted local host adapter and should
+enforce production-equivalent endpoint grants, credential injection, redirects,
+TLS, and response bounds. Credentials must not enter plugin config, action
+input, logs, or results. Local success confers no production authorization.
 
 Build native examples:
 
