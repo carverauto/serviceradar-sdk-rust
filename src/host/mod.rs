@@ -1,5 +1,5 @@
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::error::HOST_ERR_NOT_FOUND;
@@ -88,6 +88,42 @@ impl HostBackend for DefaultHostBackend {}
 fn backend() -> &'static Mutex<Box<dyn HostBackend>> {
     static BACKEND: OnceLock<Mutex<Box<dyn HostBackend>>> = OnceLock::new();
     BACKEND.get_or_init(|| Mutex::new(Box::new(DefaultHostBackend)))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn backend_install_lock() -> &'static Mutex<()> {
+    static BACKEND_INSTALL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    BACKEND_INSTALL_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct NativeHostGuard {
+    previous: Option<Box<dyn HostBackend>>,
+    _lock: MutexGuard<'static, ()>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for NativeHostGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = self.previous.take() {
+            *backend().lock().expect("host mutex poisoned") = previous;
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn install_native_backend(next: Box<dyn HostBackend>) -> NativeHostGuard {
+    let lock = backend_install_lock()
+        .lock()
+        .expect("native host install lock poisoned");
+    let mut current = backend().lock().expect("host mutex poisoned");
+    let previous = std::mem::replace(&mut *current, next);
+    drop(current);
+
+    NativeHostGuard {
+        previous: Some(previous),
+        _lock: lock,
+    }
 }
 
 #[cfg(test)]
