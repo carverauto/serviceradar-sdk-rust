@@ -102,7 +102,10 @@ fn local_host_exercises_normal_sdk_calls_and_restores_backend() {
     let result: Value = serde_json::from_slice(&capture.result_json).unwrap();
     assert_eq!(result["status"], "OK");
     assert_eq!(result["summary"], "local run complete");
-    assert!(get_config::<Value>().is_err());
+    // Asserted under the install lock: the guard inside `run_local_host` has
+    // already dropped, so without the lock a concurrent test that installs its
+    // own backend makes this call succeed and the assertion flaps.
+    crate::host::with_install_lock(|| assert!(get_config::<Value>().is_err()));
 }
 
 #[test]
