@@ -15,6 +15,7 @@ mod http;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod local;
 mod log;
+mod manifest;
 mod memory;
 mod metric_envelope;
 mod plugin_inputs;
@@ -63,6 +64,10 @@ pub use error::{
 pub use execute::{ExecuteErrorWithResult, execute, execute_partial, submit_result_payload};
 pub use http::{HttpClient, HttpRequest, HttpResponse, MAX_HTTP_RESPONSE_BYTES};
 pub use log::{LOG, LogLevel, Logger};
+pub use manifest::{
+    ManifestValidationError, OUTPUTS_CAMERA_STREAM, OUTPUTS_PLUGIN_RESULT, OUTPUTS_PROXMOX_CONSOLE,
+    PluginManifest, RUNTIME_NONE, RUNTIME_WASI_PREVIEW1, SignalSchemaContribution,
+};
 pub use memory::{alloc, dealloc};
 pub use metric_envelope::{
     METRIC_ENVELOPE_SCHEMA_VERSION, Metric, MetricBatch, MetricIngestIdentity, MetricKind,
