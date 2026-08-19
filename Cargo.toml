@@ -6,12 +6,12 @@ rust-version = "1.85"
 description = "Idiomatic Rust SDK for building ServiceRadar WebAssembly plugins"
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://git.carverauto.dev/carverauto/serviceradar-sdk-rust"
-homepage = "https://git.carverauto.dev/carverauto/serviceradar-sdk-rust"
+repository = "https://github.com/carverauto/serviceradar-sdk-rust"
+homepage = "https://github.com/carverauto/serviceradar-sdk-rust"
 documentation = "https://docs.rs/serviceradar-sdk-rust"
 keywords = ["serviceradar", "sdk", "monitoring", "wasm"]
 categories = ["api-bindings", "wasm"]
-exclude = ["/.forgejo/**", "/openspec/**"]
+exclude = ["/.forgejo/**", "/.github/**", "/openspec/**"]
 
 [lib]
 name = "serviceradar_sdk_rust"
