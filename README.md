@@ -2,6 +2,8 @@
 
 ServiceRadar plugin SDK for Rust and WebAssembly.
 
+Source of truth: https://github.com/carverauto/serviceradar-sdk-rust
+
 ## Overview
 
 This crate lets you write ServiceRadar plugin checkers in Rust without dealing directly with low-level host ABI calls. It currently includes:
