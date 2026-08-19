@@ -9,24 +9,19 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: https://data.forgejo.org/actions/checkout@v4
-      - name: Install Rust toolchain
-        run: |
-          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Show release context
         run: |
-          echo "FORGEJO_REF=${FORGEJO_REF:-}"
-          echo "FORGEJO_REF_NAME=${FORGEJO_REF_NAME:-}"
           echo "GITHUB_REF=${GITHUB_REF:-}"
           echo "GITHUB_REF_NAME=${GITHUB_REF_NAME:-}"
           sed -n '1,12p' Cargo.toml
       - name: Publish to crates.io
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.crates }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
-            echo "Forgejo secret 'crates' is not configured"
+            echo "GitHub secret CARGO_REGISTRY_TOKEN is not configured"
             exit 1
           fi
-          . "$HOME/.cargo/env"
           cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
