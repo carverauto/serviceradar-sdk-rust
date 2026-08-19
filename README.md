@@ -391,10 +391,10 @@ The repository CI runs `fmt`, `clippy`, tests, native example builds, wasm examp
 
 ## Release
 
-Crate publishing is automated in Forgejo Actions. To publish a release:
+Crate publishing is automated in GitHub Actions. To publish a release:
 
 1. Update `version` in `Cargo.toml`.
 2. Push the commit to `main`.
-3. Create and push a matching tag such as `v0.1.4`.
+3. Create and push a matching tag such as `v0.1.5`.
 
-The publish workflow verifies that the tag matches the crate version and then runs `cargo publish`. Configure the Forgejo repository secret `crates` with a crates.io API token before using the release workflow.
+The publish workflow runs `cargo publish --locked`. Configure the GitHub repository secret `CARGO_REGISTRY_TOKEN` with a crates.io API token before using the release workflow.
