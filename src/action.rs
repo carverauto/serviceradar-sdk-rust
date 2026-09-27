@@ -2,6 +2,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
+use crate::run_override::RunOverrideOperation;
 use crate::{Error, SdkResult, get_config_bytes, submit_result_payload};
 
 pub const ACTION_INVOCATION_SCHEMA_V1: &str = "serviceradar.northbound_action_invocation.v1";
@@ -77,6 +78,9 @@ pub struct ActionDescriptor {
     pub input_schema: Map<String, Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_seconds: Option<u32>,
+    /// Bounds the run overrides this action may set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_override_duration_seconds: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safety_classification: Option<ActionSafety>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -102,6 +106,7 @@ impl ActionDescriptor {
             required_context: Vec::new(),
             input_schema: Map::new(),
             timeout_seconds: Some(60),
+            max_override_duration_seconds: None,
             safety_classification: Some(ActionSafety::Standard),
             requires_confirmation: false,
             credential_requirements: Map::new(),
@@ -365,6 +370,10 @@ pub struct ActionResult {
     pub error_message: Option<String>,
     #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub metadata: Map<String, Value>,
+    /// Changes the time-bounded overrides later runs of this assignment
+    /// receive (see `set_run_override` / `end_run_override`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_overrides: Vec<RunOverrideOperation>,
 }
 
 impl ActionResult {
@@ -384,6 +393,7 @@ impl ActionResult {
             error_class: None,
             error_message: None,
             metadata: Map::new(),
+            run_overrides: Vec::new(),
         }
     }
 

@@ -22,6 +22,7 @@ mod plugin_inputs;
 mod producer_schedule;
 mod result;
 mod rtsp;
+mod run_override;
 mod tcp;
 mod telemetry;
 mod udp;
@@ -101,6 +102,10 @@ pub use rtsp::RtspTransport as StreamTransport;
 pub use rtsp::{
     AuthChallenge, H264Depacketizer, InterleavedFrame, StreamClient, StreamEndpoint,
     StreamResponse, VideoTrack,
+};
+pub use run_override::{
+    RUN_OVERRIDE_OP_END, RUN_OVERRIDE_OP_SET, RUN_OVERRIDES_CONFIG_KEY, RUN_OVERRIDES_SCHEMA_V1,
+    RunOverride, RunOverrideOperation, emit_ocsf_event, parse_run_overrides, run_overrides,
 };
 pub use tcp::{TcpConnection, tcp_dial};
 pub use telemetry::{TelemetryBatch, TelemetryRecord, TelemetrySource, emit_telemetry};

@@ -18,6 +18,7 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Device discovery/enrichment payload helpers for inventory-producing plugins
 - Advisory-feed contract builders and gateway-mediated artifact staging helpers
 - First-class metric telemetry helpers for canonical `serviceradar.metric.v1` payloads
+- Run overrides that let an action leave time-bounded state for later scheduled runs, and `emit_ocsf_event` for OCSF events from any entrypoint
 - Example plugins for HTTP, TCP, UDP, and widget-rich results
 
 The Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go` remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
@@ -345,6 +346,42 @@ Build WebAssembly examples:
 rustup target add wasm32-unknown-unknown
 cargo build --examples --target wasm32-unknown-unknown
 ```
+
+## Run Overrides
+
+Plugin runs are stateless. An action that needs to change what later scheduled
+runs of the same assignment do, such as injecting a demo fault, returns a run
+override in its `ActionResult`. The host delivers it to every later run until it
+expires. The action's descriptor must declare `max_override_duration_seconds`;
+the host clamps each override to it and ignores overrides from actions without
+it.
+
+```rust
+// In the action: declare the bound, then set (or end) an override.
+let descriptor = sdk::ActionDescriptor::new("inject_fault", "Inject fault", vec![])
+    .with_max_override_duration(1800);
+
+let result = sdk::ActionResult::succeeded("Injected conveyor jam")
+    .set_run_override("fault-jam-7", "conveyor_jam", Some("conveyor-7".into()), 600, params)
+    .end_run_override("fault-saturation-2");
+
+// In a scheduled run: read the delivered overrides.
+for o in sdk::run_overrides()? {
+    if o.expired {
+        // Emit the resolving event; the host stops delivering after this run submits.
+    } else if o.active_at(time::OffsetDateTime::now_utc())? {
+        // Apply the override to this run.
+    }
+}
+```
+
+`emit_ocsf_event` emits a single OCSF event through the telemetry path from a
+scheduled run or an action entrypoint, for example the opening event of an
+injected fault. It requires the `emit_telemetry` capability.
+
+The config and action-result wire shapes are pinned by
+`fixtures/plugin_run_overrides_config.json` and
+`fixtures/northbound_action_result_run_overrides.json`.
 
 ## Device Discovery
 

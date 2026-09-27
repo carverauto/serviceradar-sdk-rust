@@ -1,0 +1,23 @@
+{
+  "schema": "serviceradar.northbound_action_result.v1",
+  "status": "succeeded",
+  "summary": {
+    "message": "Injected conveyor jam"
+  },
+  "run_overrides": [
+    {
+      "op": "set",
+      "id": "fault-jam-7",
+      "kind": "conveyor_jam",
+      "target": "conveyor-7",
+      "params": {
+        "severity": "critical"
+      },
+      "duration_seconds": 600
+    },
+    {
+      "op": "end",
+      "id": "fault-saturation-2"
+    }
+  ]
+}
