@@ -1,0 +1,43 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "http_envelope",
+  "scenario": {
+    "body": "{\"events\":[]}",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "method": "POST",
+    "response_mode": "envelope",
+    "timeout_ms": 2000,
+    "url": "https://example.com/api/v1/events"
+  },
+  "replies": {
+    "http_response": "{\"status\":202,\"headers\":{\"content-type\":\"application/json\"},\"body_base64\":\"e30=\"}"
+  },
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "http_request",
+      "args": {
+        "request": {
+          "json": {
+            "body": "{\"events\":[]}",
+            "headers": {
+              "content-type": "application/json"
+            },
+            "method": "POST",
+            "response_mode": "envelope",
+            "timeout_ms": 2000,
+            "url": "https://example.com/api/v1/events"
+          }
+        }
+      },
+      "returns": {
+        "n": 81,
+        "response": "{\"status\":202,\"headers\":{\"content-type\":\"application/json\"},\"body_base64\":\"e30=\"}"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capabilities": [
+    "http_status_body",
+    "http_envelope",
+    "tcp",
+    "udp",
+    "websocket",
+    "rtsp",
+    "result",
+    "telemetry_metric",
+    "run_overrides",
+    "action_result",
+    "plugin_inputs"
+  ]
+}

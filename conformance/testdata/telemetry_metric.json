@@ -1,0 +1,36 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "telemetry_metric",
+  "scenario": {},
+  "replies": {},
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "emit_telemetry",
+      "args": {
+        "payload": {
+          "json": {
+            "records": [
+              {
+                "event_id": "evt-conformance-1",
+                "event_time_unix_nano": 1790510400000000000,
+                "observed_time_unix_nano": 1790510400000000000,
+                "payload": "ChZzZXJ2aWNlcmFkYXIubWV0cmljLnYxEiMKB2FnZW50LTEiC2NvbmZvcm1hbmNlKgt3YXNtLXBsdWdpbhpCCg5wbHVnaW4tbWV0cmljcxIWc2VydmljZXJhZGFyLm1ldHJpYy52MRoLY29uZm9ybWFuY2UiC3dhc20tcGx1Z2luogFDChZjb25mb3JtYW5jZS5sYXRlbmN5X21zEgZwbHVnaW4YATICbXOiARoJAAAAAAAAEkASAzQuNRgBIICAkrWO98rsGA==",
+                "payload_kind": "serviceradar_metrics"
+              }
+            ],
+            "source": {
+              "source_instance": "conformance",
+              "source_type": "plugin"
+            }
+          }
+        }
+      },
+      "returns": {
+        "code": 0
+      }
+    }
+  ]
+}

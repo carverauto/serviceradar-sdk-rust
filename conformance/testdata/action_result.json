@@ -1,0 +1,33 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "action_result",
+  "scenario": {},
+  "replies": {},
+  "output": {
+    "run_overrides": [
+      {
+        "duration_seconds": 300,
+        "id": "fault-jam-7",
+        "kind": "conveyor_jam",
+        "op": "set",
+        "params": {
+          "severity": "critical"
+        },
+        "target": "conveyor-7"
+      },
+      {
+        "id": "fault-old-1",
+        "op": "end"
+      }
+    ],
+    "schema": "serviceradar.northbound_action_result.v1",
+    "status": "succeeded",
+    "summary": {
+      "message": "fault injected"
+    }
+  },
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": []
+}

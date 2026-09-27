@@ -1,0 +1,60 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "websocket",
+  "scenario": {
+    "send": "hello",
+    "timeout_ms": 2000,
+    "url": "ws://192.0.2.10:8080/socket"
+  },
+  "replies": {
+    "websocket_recvs": [
+      "world"
+    ]
+  },
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "websocket_connect",
+      "args": {
+        "request": "ws://192.0.2.10:8080/socket",
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "handle": 7
+      }
+    },
+    {
+      "func": "websocket_send",
+      "args": {
+        "data": "hello",
+        "handle": 7,
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "n": 5
+      }
+    },
+    {
+      "func": "websocket_recv",
+      "args": {
+        "handle": 7,
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "data": "world",
+        "n": 5
+      }
+    },
+    {
+      "func": "websocket_close",
+      "args": {
+        "handle": 7
+      },
+      "returns": {
+        "code": 0
+      }
+    }
+  ]
+}

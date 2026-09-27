@@ -7,6 +7,8 @@ mod camera_plugin;
 mod camera_relay;
 mod check_descriptor;
 mod config;
+#[cfg(test)]
+mod conformance;
 mod device_discovery;
 mod error;
 mod execute;

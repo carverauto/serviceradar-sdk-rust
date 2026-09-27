@@ -1,0 +1,60 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "run_overrides",
+  "scenario": {
+    "config": {
+      "_serviceradar_run_overrides": {
+        "overrides": [
+          {
+            "expired": false,
+            "expires_at": "2026-09-27T12:10:00Z",
+            "id": "fault-jam-7",
+            "kind": "conveyor_jam",
+            "params": {
+              "severity": "critical"
+            },
+            "starts_at": "2026-09-27T12:00:00Z",
+            "target": "conveyor-7"
+          },
+          {
+            "expired": true,
+            "expires_at": "2026-09-27T11:50:00Z",
+            "id": "fault-saturation-2",
+            "kind": "channel_saturation",
+            "starts_at": "2026-09-27T11:40:00Z",
+            "target": "ap-2"
+          }
+        ],
+        "schema": "serviceradar.plugin_run_overrides.v1"
+      },
+      "poll_seconds": 30,
+      "site": "campus-a"
+    }
+  },
+  "replies": {},
+  "output": [
+    {
+      "expired": false,
+      "expires_at": "2026-09-27T12:10:00Z",
+      "id": "fault-jam-7",
+      "kind": "conveyor_jam",
+      "params": {
+        "severity": "critical"
+      },
+      "starts_at": "2026-09-27T12:00:00Z",
+      "target": "conveyor-7"
+    },
+    {
+      "expired": true,
+      "expires_at": "2026-09-27T11:50:00Z",
+      "id": "fault-saturation-2",
+      "kind": "channel_saturation",
+      "starts_at": "2026-09-27T11:40:00Z",
+      "target": "ap-2"
+    }
+  ],
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": []
+}

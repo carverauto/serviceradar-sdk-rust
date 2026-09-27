@@ -1,0 +1,77 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "rtsp",
+  "scenario": {
+    "describe_headers": {
+      "Accept": "application/sdp"
+    },
+    "timeout_ms": 2000,
+    "url": "rtsp://example.com:8554/live"
+  },
+  "replies": {
+    "tcp_reads": [
+      "RTSP/1.0 200 OK\r\nCSeq: 1\r\nPublic: OPTIONS, DESCRIBE\r\n\r\n",
+      "RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 0\r\n\r\n"
+    ]
+  },
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "tcp_connect",
+      "args": {
+        "addr": "example.com",
+        "port": 8554,
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "handle": 7
+      }
+    },
+    {
+      "func": "tcp_write",
+      "args": {
+        "data": "OPTIONS /live RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: ServiceRadar-Camera-WASM/0.1\r\n\r\n",
+        "handle": 7,
+        "timeout_ms": 1999
+      },
+      "returns": {
+        "n": 77
+      }
+    },
+    {
+      "func": "tcp_read",
+      "args": {
+        "handle": 7,
+        "timeout_ms": 1999
+      },
+      "returns": {
+        "data": "RTSP/1.0 200 OK\r\nCSeq: 1\r\nPublic: OPTIONS, DESCRIBE\r\n\r\n",
+        "n": 55
+      }
+    },
+    {
+      "func": "tcp_write",
+      "args": {
+        "data": "DESCRIBE /live RTSP/1.0\r\nCSeq: 2\r\nUser-Agent: ServiceRadar-Camera-WASM/0.1\r\nAccept: application/sdp\r\n\r\n",
+        "handle": 7,
+        "timeout_ms": 1999
+      },
+      "returns": {
+        "n": 103
+      }
+    },
+    {
+      "func": "tcp_read",
+      "args": {
+        "handle": 7,
+        "timeout_ms": 1999
+      },
+      "returns": {
+        "data": "RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 0\r\n\r\n",
+        "n": 47
+      }
+    }
+  ]
+}

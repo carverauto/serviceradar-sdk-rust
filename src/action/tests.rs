@@ -209,6 +209,36 @@ fn action_fixtures_decode() {
 }
 
 #[test]
+fn action_async_fixtures_decode() {
+    let deferred: ActionResult = serde_json::from_str(include_str!(
+        "../../fixtures/northbound_action_deferred_result.json"
+    ))
+    .expect("decode deferred fixture");
+    assert_eq!(deferred.status, ActionStatus::Deferred);
+    assert_eq!(
+        deferred.external_correlation_id.as_deref(),
+        Some("hpna-job-123")
+    );
+
+    // The polling fixture carries the provider's final phase: the external
+    // task finished and the plugin must fetch the result.
+    let polling: ActionResult = serde_json::from_str(include_str!(
+        "../../fixtures/northbound_action_polling_result.json"
+    ))
+    .expect("decode polling fixture");
+    assert_eq!(polling.status, ActionStatus::ResultFetching);
+
+    let invocation_doc = include_str!("../../fixtures/northbound_action_poll_request.json");
+    let config = format!(r#"{{"timeout":"30s","action_invocation":{invocation_doc}}}"#);
+    let config = parse_action_config(config.as_bytes()).expect("decode poll fixture");
+    assert_eq!(config.action_invocation.phase.as_deref(), Some("poll"));
+    assert_eq!(
+        config.action_invocation.targets[0].interface_uid.as_deref(),
+        Some("if-1")
+    );
+}
+
+#[test]
 fn action_poll_mode_serializes_like_go_sdk() {
     let encoded = serde_json::to_value(ActionPollMode::Webhook).expect("serialize poll mode");
     assert_eq!(encoded, json!("webhook"));

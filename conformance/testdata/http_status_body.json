@@ -1,0 +1,35 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "http_status_body",
+  "scenario": {
+    "method": "GET",
+    "response_mode": "status_body",
+    "timeout_ms": 2000,
+    "url": "https://example.com/health"
+  },
+  "replies": {
+    "http_response": "200\n{\"ok\":true}"
+  },
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "http_request",
+      "args": {
+        "request": {
+          "json": {
+            "method": "GET",
+            "response_mode": "status_body",
+            "timeout_ms": 2000,
+            "url": "https://example.com/health"
+          }
+        }
+      },
+      "returns": {
+        "n": 15,
+        "response": "200\n{\"ok\":true}"
+      }
+    }
+  ]
+}

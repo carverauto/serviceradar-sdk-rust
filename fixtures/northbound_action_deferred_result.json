@@ -1,0 +1,31 @@
+{
+  "schema": "serviceradar.northbound_action_result.v1",
+  "status": "deferred",
+  "summary": {
+    "message": "External task accepted"
+  },
+  "external_correlation_id": "hpna-job-123",
+  "continuation_state": {
+    "external_task_id": "hpna-job-123",
+    "stage": "poll"
+  },
+  "next_poll_delay_seconds": 15,
+  "max_duration_seconds": 300,
+  "targets": [
+    {
+      "device_uid": "sr:device-1",
+      "interface_uid": "if-1",
+      "status": "deferred",
+      "result": {
+        "message": "Queued in external system"
+      },
+      "external_correlation_id": "hpna-job-123",
+      "continuation_state": {
+        "external_task_id": "hpna-job-123",
+        "stage": "poll"
+      },
+      "next_poll_delay_seconds": 15,
+      "max_duration_seconds": 300
+    }
+  ]
+}
