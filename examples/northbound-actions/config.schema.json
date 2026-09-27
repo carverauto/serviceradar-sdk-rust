@@ -1,0 +1,7 @@
+{
+  "type": "object",
+  "properties": {
+    "fault_kind": {"type": "string"},
+    "fault_duration_seconds": {"type": "integer", "minimum": 1}
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "url": {"type": "string", "format": "uri"},
+    "warn_ms": {"type": "number", "minimum": 0},
+    "crit_ms": {"type": "number", "minimum": 0}
+  },
+  "required": ["url"]
+}

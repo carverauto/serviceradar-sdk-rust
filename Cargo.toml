@@ -37,6 +37,14 @@ path = "examples/udp-check/src/main.rs"
 name = "widgets-check"
 path = "examples/widgets-check/src/main.rs"
 
+[[example]]
+name = "rtsp-check"
+path = "examples/rtsp-check/src/main.rs"
+
+[[example]]
+name = "northbound-actions"
+path = "examples/northbound-actions/src/main.rs"
+
 [features]
 # RTSPS: TLS inside the plugin over the host TCP proxy (pure-Rust crypto, so it
 # builds for wasm32-wasip1 without a C toolchain).

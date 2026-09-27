@@ -1,0 +1,18 @@
+id: udp-check
+name: UDP Check
+version: 0.1.0
+entrypoint: run_check
+outputs: serviceradar.plugin_result.v1
+capabilities:
+  - get_config
+  - log
+  - submit_result
+  - udp_sendto
+resources:
+  requested_memory_mb: 64
+  requested_cpu_ms: 2000
+permissions:
+  allowed_domains:
+    - example.com
+  allowed_ports:
+    - 53
