@@ -37,14 +37,22 @@ path = "examples/udp-check/src/main.rs"
 name = "widgets-check"
 path = "examples/widgets-check/src/main.rs"
 
+[features]
+# RTSPS: TLS inside the plugin over the host TCP proxy (pure-Rust crypto, so it
+# builds for wasm32-wasip1 without a C toolchain).
+rtsps = ["dep:rustls", "dep:rustls-rustcrypto", "dep:webpki-roots"]
+
 [dependencies]
 base64 = "0.22"
 humantime = "2.2"
 md5 = "0.7"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"], optional = true }
+rustls-rustcrypto = { version = "0.0.2-alpha", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 time = { version = ">=0.3.41, <0.3.42", features = ["formatting", "parsing"] }
 url = ">=2.5, <2.5.5"
+webpki-roots = { version = "1", optional = true }
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"
