@@ -107,6 +107,7 @@ fn rtsps_without_the_feature_fails_instead_of_sending_plaintext() {
 mod rtsps {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
@@ -236,8 +237,10 @@ mod rtsps {
             port,
             stream: None,
             read_timeouts: Arc::clone(&read_timeouts),
+            write_timeouts: Arc::new(Mutex::new(Vec::new())),
             pending: Vec::new(),
             primed: false,
+            first_read_hold: Duration::from_millis(400),
         }));
 
         let endpoint =
@@ -247,8 +250,79 @@ mod rtsps {
         let reads = read_timeouts.lock().expect("timeouts").clone();
         assert!(reads.len() >= 2, "handshake reads: {reads:?}");
         assert!(
+            reads.iter().all(|timeout| *timeout >= 1),
+            "host was called with timeout 0: {reads:?}"
+        );
+        assert!(
             reads[1] + 100 < reads[0],
             "later handshake read kept a fresh timeout {reads:?}"
+        );
+        let _ = server.join().expect("server thread");
+    }
+
+    #[test]
+    fn rtsps_handshake_does_not_call_the_host_after_the_deadline() {
+        let (port, server) = spawn_server();
+        let read_timeouts = Arc::new(Mutex::new(Vec::new()));
+        let write_timeouts = Arc::new(Mutex::new(Vec::new()));
+        let _guard = install_test_backend(Box::new(StallingHost {
+            port,
+            stream: None,
+            read_timeouts: Arc::clone(&read_timeouts),
+            write_timeouts: Arc::clone(&write_timeouts),
+            pending: Vec::new(),
+            primed: false,
+            first_read_hold: Duration::from_millis(500),
+        }));
+
+        let endpoint =
+            RtspEndpoint::parse("rtsps://camera01.example.com/stream", "", "").expect("endpoint");
+        let _ = dial_rtsp_transport(&endpoint, Duration::from_millis(200), true);
+
+        let reads = read_timeouts.lock().expect("timeouts").clone();
+        let writes = write_timeouts.lock().expect("timeouts").clone();
+        assert!(!reads.is_empty(), "handshake made no reads");
+        assert!(
+            reads
+                .iter()
+                .chain(writes.iter())
+                .all(|timeout| *timeout >= 1),
+            "expired deadline still called the host: reads {reads:?} writes {writes:?}"
+        );
+        let _ = server.join().expect("server thread");
+    }
+
+    #[test]
+    fn rtsps_read_keeps_one_deadline_across_record_fragments() {
+        let (port, server) = spawn_server();
+        let application = Arc::new(AtomicBool::new(false));
+        let app_reads = Arc::new(Mutex::new(Vec::new()));
+        let _guard = install_test_backend(Box::new(ChunkedResponseHost {
+            port,
+            stream: None,
+            application: Arc::clone(&application),
+            app_reads: Arc::clone(&app_reads),
+            app_writes: 0,
+            held: false,
+        }));
+
+        let endpoint =
+            RtspEndpoint::parse("rtsps://camera01.example.com/stream", "", "").expect("endpoint");
+        let conn =
+            dial_rtsp_transport(&endpoint, Duration::from_secs(5), true).expect("rtsps handshake");
+        application.store(true, Ordering::SeqCst);
+        let mut client = RtspClient::new(conn, Duration::from_millis(500), endpoint.clone());
+        let _ = client.do_request("OPTIONS", &endpoint.request_uri, &Default::default());
+
+        let reads = app_reads.lock().expect("timeouts").clone();
+        assert!(reads.len() >= 2, "response reads: {reads:?}");
+        assert!(
+            reads.iter().all(|timeout| *timeout >= 1),
+            "host was called with timeout 0: {reads:?}"
+        );
+        assert!(
+            reads[1] + 100 < reads[0],
+            "later record fragment kept a fresh timeout {reads:?}"
         );
         let _ = server.join().expect("server thread");
     }
@@ -257,8 +331,10 @@ mod rtsps {
         port: u16,
         stream: Option<TcpStream>,
         read_timeouts: Arc<Mutex<Vec<u32>>>,
+        write_timeouts: Arc<Mutex<Vec<u32>>>,
         pending: Vec<u8>,
         primed: bool,
+        first_read_hold: Duration,
     }
 
     impl TestHostBackend for StallingHost {
@@ -278,7 +354,7 @@ mod rtsps {
                 .push(timeout_ms);
             if !self.primed {
                 self.primed = true;
-                thread::sleep(Duration::from_millis(400));
+                thread::sleep(self.first_read_hold);
                 let sock = self.stream.as_mut().expect("connected");
                 let mut tmp = [0_u8; 8192];
                 loop {
@@ -298,7 +374,76 @@ mod rtsps {
             n as i32
         }
 
+        fn tcp_write(&mut self, _handle: u32, buf: &[u8], timeout_ms: u32) -> i32 {
+            self.write_timeouts
+                .lock()
+                .expect("timeouts")
+                .push(timeout_ms);
+            match self.stream.as_mut().expect("connected").write(buf) {
+                Ok(n) => n as i32,
+                Err(_) => -1,
+            }
+        }
+
+        fn tcp_close(&mut self, _handle: u32) -> i32 {
+            self.stream = None;
+            0
+        }
+    }
+
+    struct ChunkedResponseHost {
+        port: u16,
+        stream: Option<TcpStream>,
+        application: Arc<AtomicBool>,
+        app_reads: Arc<Mutex<Vec<u32>>>,
+        app_writes: u32,
+        held: bool,
+    }
+
+    impl TestHostBackend for ChunkedResponseHost {
+        fn tcp_connect(&mut self, _addr: &[u8], _port: u32, _timeout_ms: u32) -> i32 {
+            let stream = TcpStream::connect(("127.0.0.1", self.port)).expect("loopback connect");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("read timeout");
+            self.stream = Some(stream);
+            3
+        }
+
+        fn tcp_read(&mut self, _handle: u32, buf: &mut [u8], timeout_ms: u32) -> i32 {
+            if !self.application.load(Ordering::SeqCst) || self.app_writes == 0 {
+                return match self.stream.as_mut().expect("connected").read(buf) {
+                    Ok(n) => n as i32,
+                    Err(_) => -1,
+                };
+            }
+            self.app_reads.lock().expect("timeouts").push(timeout_ms);
+            let sock = self.stream.as_mut().expect("connected");
+            if !self.held {
+                self.held = true;
+                thread::sleep(Duration::from_millis(300));
+                let mut byte = [0_u8; 1];
+                return match sock.read(&mut byte) {
+                    Ok(0) => -1,
+                    Ok(_) => {
+                        buf[0] = byte[0];
+                        1
+                    }
+                    Err(_) => -1,
+                };
+            }
+            let _ = sock.set_nonblocking(true);
+            match sock.read(buf) {
+                Ok(0) => -1,
+                Ok(n) => n as i32,
+                Err(_) => -1,
+            }
+        }
+
         fn tcp_write(&mut self, _handle: u32, buf: &[u8], _timeout_ms: u32) -> i32 {
+            if self.application.load(Ordering::SeqCst) {
+                self.app_writes += 1;
+            }
             match self.stream.as_mut().expect("connected").write(buf) {
                 Ok(n) => n as i32,
                 Err(_) => -1,

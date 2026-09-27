@@ -20,26 +20,35 @@ struct HostSocket {
 }
 
 impl HostSocket {
-    fn call_timeout(&self) -> Duration {
-        match self.deadline {
+    fn host_timeout(&self) -> io::Result<Duration> {
+        let timeout = match self.deadline {
             Some(deadline) => deadline.saturating_duration_since(Instant::now()),
             None => self.timeout,
+        };
+        if timeout < Duration::from_millis(1) {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "rtsps deadline exceeded",
+            ));
         }
+        Ok(timeout)
     }
 }
 
 impl Read for HostSocket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let timeout = self.host_timeout()?;
         self.conn
-            .read(buf, self.call_timeout())
+            .read(buf, timeout)
             .map_err(|err| io::Error::other(err.to_string()))
     }
 }
 
 impl Write for HostSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let timeout = self.host_timeout()?;
         self.conn
-            .write(buf, self.call_timeout())
+            .write(buf, timeout)
             .map_err(|err| io::Error::other(err.to_string()))
     }
 
@@ -93,20 +102,29 @@ impl TlsConnection {
     }
 
     pub(super) fn read(&mut self, buf: &mut [u8], timeout: Duration) -> SdkResult<usize> {
-        self.sock.timeout = timeout;
-        self.sock.deadline = None;
-        rustls::Stream::new(&mut self.tls, &mut self.sock)
+        self.arm(timeout);
+        let result = rustls::Stream::new(&mut self.tls, &mut self.sock)
             .read(buf)
-            .map_err(tls_io_error)
+            .map_err(tls_io_error);
+        self.sock.deadline = None;
+        result
     }
 
     pub(super) fn write(&mut self, data: &[u8], timeout: Duration) -> SdkResult<usize> {
-        self.sock.timeout = timeout;
+        self.arm(timeout);
+        let result = (|| {
+            let mut stream = rustls::Stream::new(&mut self.tls, &mut self.sock);
+            stream.write_all(data).map_err(tls_io_error)?;
+            stream.flush().map_err(tls_io_error)?;
+            Ok(data.len())
+        })();
         self.sock.deadline = None;
-        let mut stream = rustls::Stream::new(&mut self.tls, &mut self.sock);
-        stream.write_all(data).map_err(tls_io_error)?;
-        stream.flush().map_err(tls_io_error)?;
-        Ok(data.len())
+        result
+    }
+
+    fn arm(&mut self, timeout: Duration) {
+        self.sock.timeout = timeout;
+        self.sock.deadline = Instant::now().checked_add(timeout);
     }
 
     pub(super) fn close(&mut self) -> SdkResult<()> {
