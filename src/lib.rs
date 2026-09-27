@@ -53,6 +53,7 @@ pub use camera_relay::{CameraRelayConfig, with_url_user_info};
 pub use check_descriptor::{
     CheckDescriptor, RESULT_SCHEMA_TARGET_CHECK_V1, TARGET_KIND_DEVICE, TARGET_KIND_SERVICE,
 };
+pub use config::MAX_PAYLOAD_BYTES;
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
 pub use device_discovery::{
     DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice,
@@ -63,7 +64,10 @@ pub use error::{
     HostErrorCode, SdkResult, host_error,
 };
 pub use execute::{ExecuteErrorWithResult, execute, execute_partial, submit_result_payload};
-pub use http::{HttpClient, HttpRequest, HttpResponse, MAX_HTTP_RESPONSE_BYTES};
+pub use http::{
+    HTTP, HTTP_RESPONSE_MODE_STATUS_BODY, HttpClient, HttpRequest, HttpResponse,
+    MAX_HTTP_RESPONSE_BYTES,
+};
 pub use log::{LOG, LogLevel, Logger};
 pub use manifest::{
     ManifestValidationError, OUTPUTS_CAMERA_STREAM, OUTPUTS_PLUGIN_RESULT, OUTPUTS_PROXMOX_CONSOLE,

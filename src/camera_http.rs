@@ -56,6 +56,7 @@ impl CameraHttpClient {
             headers: BTreeMap::new(),
             body: Vec::new(),
             body_base64: false,
+            response_mode: String::new(),
             timeout_ms: 0,
             insecure_skip_verify: false,
         })

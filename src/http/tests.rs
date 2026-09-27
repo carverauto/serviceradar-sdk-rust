@@ -38,6 +38,7 @@ fn http_client_encodes_request_and_decodes_response() {
             headers: BTreeMap::from([("content-type".to_string(), "application/json".to_string())]),
             body: br#"{"ping":true}"#.to_vec(),
             body_base64: false,
+            response_mode: String::new(),
             timeout_ms: 5_000,
             insecure_skip_verify: false,
         })
@@ -80,4 +81,45 @@ fn http_response_helpers_decode_headers_text_and_json() {
 
     let value: serde_json::Value = response.json().expect("json body");
     assert_eq!(value["ok"], true);
+}
+
+struct StatusBodyHost;
+
+impl TestHostBackend for StatusBodyHost {
+    fn http_request(&mut self, req: &[u8], resp: &mut [u8]) -> i32 {
+        let payload: serde_json::Value = serde_json::from_slice(req).expect("decode request");
+        assert_eq!(payload["response_mode"], "status_body");
+        let reply = b"201\n{\"created\":true}";
+        resp[..reply.len()].copy_from_slice(reply);
+        reply.len() as i32
+    }
+}
+
+#[test]
+fn http_client_defaults_to_status_body_and_decodes_raw_reply() {
+    let _guard = install_test_backend(Box::new(StatusBodyHost));
+
+    let response = HttpClient::default()
+        .get("https://example.com/items")
+        .expect("http request");
+
+    assert_eq!(response.status, 201);
+    assert_eq!(response.body, br#"{"created":true}"#);
+}
+
+#[test]
+fn status_body_decoder_falls_back_for_json_envelopes() {
+    let decoded =
+        super::decode_status_body_response(br#"{"status":200}"#, Duration::ZERO).expect("decode");
+    assert!(decoded.is_none());
+    let decoded = super::decode_status_body_response(b"\nbody", Duration::ZERO).expect("decode");
+    assert!(decoded.is_none());
+}
+
+#[test]
+fn explicit_response_mode_is_sent_verbatim() {
+    let payload = HttpRequestPayload::from_request(
+        HttpRequest::get("https://example.com").with_response_mode("json"),
+    );
+    assert_eq!(payload.response_mode, "json");
 }
