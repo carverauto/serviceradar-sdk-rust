@@ -70,7 +70,7 @@ fn run_scheduled(doc: Map<String, Value>) {
         let config: Config = serde_json::from_value(Value::Object(doc))
             .map(Config::normalized)
             .unwrap_or_default();
-        let overrides = sdk::run_overrides().unwrap_or_default();
+        let overrides = sdk::run_overrides()?;
         let mut table = BTreeMap::new();
         table.insert("Fault kind".to_string(), config.fault_kind.clone());
         table.insert("Active overrides".to_string(), overrides.len().to_string());
@@ -88,28 +88,30 @@ fn run_scheduled(doc: Map<String, Value>) {
 }
 
 fn run_action(doc: Map<String, Value>) {
+    let _ = sdk::submit_action_result(&action_result(doc));
+}
+
+fn action_result(doc: Map<String, Value>) -> sdk::ActionResult {
     let host_config = match sdk::parse_action_config(
         serde_json::to_vec(&Value::Object(doc))
             .unwrap_or_default()
             .as_slice(),
     ) {
         Ok(config) => config,
-        Err(err) => {
-            let _ = sdk::submit_action_result(&sdk::ActionResult::failed(
-                "config_error",
-                err.to_string(),
-            ));
-            return;
-        }
+        Err(err) => return sdk::ActionResult::failed("config_error", err.to_string()),
     };
-    let input: ActionInput = host_config.decode_plugin_config().unwrap_or_default();
-    let result = match host_config.action_invocation.action_id.as_str() {
+    let input = match serde_json::from_value(Value::Object(
+        host_config.action_invocation.input_values.clone(),
+    )) {
+        Ok(input) => input,
+        Err(err) => return sdk::ActionResult::failed("config_error", err.to_string()),
+    };
+    match host_config.action_invocation.action_id.as_str() {
         "sample.device.lookup" => device_lookup(&host_config, &input),
         "sample.fault.inject" => fault_inject(&host_config, &input),
         "sample.fault.clear" => fault_clear(&host_config, &input),
         unknown => sdk::ActionResult::failed("unknown_action", format!("unknown action {unknown}")),
-    };
-    let _ = sdk::submit_action_result(&result);
+    }
 }
 
 fn device_lookup(host_config: &sdk::ActionHostConfig, input: &ActionInput) -> sdk::ActionResult {
@@ -161,7 +163,11 @@ fn poll_finished(invocation: &sdk::ActionInvocation) -> sdk::ActionResult {
     result
 }
 
-fn fault_inject(_host_config: &sdk::ActionHostConfig, input: &ActionInput) -> sdk::ActionResult {
+fn fault_inject(host_config: &sdk::ActionHostConfig, input: &ActionInput) -> sdk::ActionResult {
+    let config = match host_config.decode_plugin_config::<Config>() {
+        Ok(config) => config.normalized(),
+        Err(err) => return sdk::ActionResult::failed("config_error", err.to_string()),
+    };
     let fault_id = if input.fault_id.trim().is_empty() {
         "fault-sample-1".to_string()
     } else {
@@ -182,9 +188,9 @@ fn fault_inject(_host_config: &sdk::ActionHostConfig, input: &ActionInput) -> sd
     let _ = sdk::emit_ocsf_event(event);
     sdk::ActionResult::succeeded(format!("fault {fault_id} injected")).set_run_override(
         fault_id,
-        "link_degraded",
+        config.fault_kind,
         Some(target),
-        600,
+        config.fault_duration_seconds,
         params,
     )
 }
@@ -203,3 +209,107 @@ fn fault_clear(_host_config: &sdk::ActionHostConfig, input: &ActionInput) -> sdk
 }
 
 fn main() {}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    fn invocation(action_id: &str, plugin: Value, input: Value) -> Map<String, Value> {
+        let mut doc = plugin.as_object().cloned().unwrap_or_default();
+        doc.insert(
+            "action_invocation".to_string(),
+            json!({
+                "schema": "serviceradar.northbound_action_invocation.v1",
+                "invocation_id": "inv-1",
+                "action_id": action_id,
+                "phase": "execute",
+                "targets": [{
+                    "kind": "device",
+                    "device_uid": "sr:device-1"
+                }],
+                "input_values": input
+            }),
+        );
+        doc
+    }
+
+    #[test]
+    fn lookup_reads_execution_mode_from_input_values() {
+        let deferred = action_result(invocation(
+            "sample.device.lookup",
+            json!({}),
+            json!({"execution_mode": "deferred"}),
+        ));
+        assert_eq!(deferred.status, sdk::ActionStatus::Deferred);
+        assert_eq!(deferred.poll_mode, Some(sdk::ActionPollMode::Poll));
+
+        let immediate = action_result(invocation(
+            "sample.device.lookup",
+            json!({"execution_mode": "deferred"}),
+            json!({}),
+        ));
+        assert_eq!(immediate.status, sdk::ActionStatus::Succeeded);
+    }
+
+    #[test]
+    fn malformed_input_values_fail_the_action() {
+        let result = action_result(invocation(
+            "sample.device.lookup",
+            json!({}),
+            json!({"execution_mode": 1}),
+        ));
+        assert_eq!(result.status, sdk::ActionStatus::Failed);
+        assert_eq!(result.error_class.as_deref(), Some("config_error"));
+    }
+
+    #[test]
+    fn inject_applies_check_config_and_input_values() {
+        let result = action_result(invocation(
+            "sample.fault.inject",
+            json!({"fault_kind": "power_loss", "fault_duration_seconds": 30}),
+            json!({"fault_id": "fault-9", "target": "device-9"}),
+        ));
+        assert_eq!(result.status, sdk::ActionStatus::Succeeded);
+        let op = &result.run_overrides[0];
+        assert_eq!(op.id, "fault-9");
+        assert_eq!(op.kind.as_deref(), Some("power_loss"));
+        assert_eq!(op.target.as_deref(), Some("device-9"));
+        assert_eq!(op.duration_seconds, Some(30));
+    }
+
+    #[test]
+    fn inject_defaults_when_config_and_inputs_are_absent() {
+        let result = action_result(invocation("sample.fault.inject", json!({}), json!({})));
+        let op = &result.run_overrides[0];
+        assert_eq!(op.id, "fault-sample-1");
+        assert_eq!(op.kind.as_deref(), Some("link_degraded"));
+        assert_eq!(op.target.as_deref(), Some("device-1"));
+        assert_eq!(op.duration_seconds, Some(600));
+    }
+
+    #[test]
+    fn inject_rejects_a_non_numeric_fault_duration() {
+        let result = action_result(invocation(
+            "sample.fault.inject",
+            json!({"fault_duration_seconds": "30"}),
+            json!({}),
+        ));
+        assert_eq!(result.status, sdk::ActionStatus::Failed);
+        assert_eq!(result.error_class.as_deref(), Some("config_error"));
+    }
+
+    #[test]
+    fn clear_reads_fault_id_from_input_values() {
+        let result = action_result(invocation(
+            "sample.fault.clear",
+            json!({}),
+            json!({"fault_id": "fault-9"}),
+        ));
+        assert_eq!(result.status, sdk::ActionStatus::Succeeded);
+        assert_eq!(result.run_overrides.len(), 1);
+        assert_eq!(result.run_overrides[0].op, sdk::RUN_OVERRIDE_OP_END);
+        assert_eq!(result.run_overrides[0].id, "fault-9");
+    }
+}

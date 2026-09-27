@@ -2,6 +2,7 @@ id: udp-check
 name: UDP Check
 version: 0.1.0
 entrypoint: run_check
+runtime: wasi-preview1
 outputs: serviceradar.plugin_result.v1
 capabilities:
   - get_config
@@ -15,4 +16,4 @@ permissions:
   allowed_domains:
     - example.com
   allowed_ports:
-    - 53
+    - 8125

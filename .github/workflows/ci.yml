@@ -18,13 +18,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
       - name: Run clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets --features rtsps --locked -- -D warnings
       - name: Run tests
-        run: cargo test --all-targets
+        run: cargo test --all-targets --features rtsps
       - name: Build examples
         run: cargo build --examples
       - name: Build wasm examples
-        run: cargo build --examples --target wasm32-wasip1
+        run: cargo build --examples --target wasm32-wasip1 --features rtsps
       - uses: actions/setup-go@v5
         with:
           go-version-file: conformance/runtime/go.mod
