@@ -66,25 +66,25 @@ pub extern "C" fn run_check() {
 }
 
 fn run_scheduled(doc: Map<String, Value>) {
-    let _ = sdk::execute(|| {
-        let config: Config = serde_json::from_value(Value::Object(doc))
-            .map(Config::normalized)
-            .unwrap_or_default();
-        let overrides = sdk::run_overrides()?;
-        let mut table = BTreeMap::new();
-        table.insert("Fault kind".to_string(), config.fault_kind.clone());
-        table.insert("Active overrides".to_string(), overrides.len().to_string());
-        for active in &overrides {
-            table.insert(
-                format!("Override {}", active.id),
-                format!("{} expired={}", active.kind, active.expired),
-            );
-        }
-        Ok(
-            sdk::PluginResult::ok(format!("{} active run override(s)", overrides.len()))
-                .with_table(table, "key-value"),
-        )
-    });
+    let _ = sdk::execute(|| scheduled_check(doc));
+}
+
+fn scheduled_check(doc: Map<String, Value>) -> sdk::SdkResult<sdk::PluginResult> {
+    let config: Config = serde_json::from_value(Value::Object(doc)).map(Config::normalized)?;
+    let overrides = sdk::run_overrides()?;
+    let mut table = BTreeMap::new();
+    table.insert("Fault kind".to_string(), config.fault_kind.clone());
+    table.insert("Active overrides".to_string(), overrides.len().to_string());
+    for active in &overrides {
+        table.insert(
+            format!("Override {}", active.id),
+            format!("{} expired={}", active.kind, active.expired),
+        );
+    }
+    Ok(
+        sdk::PluginResult::ok(format!("{} active run override(s)", overrides.len()))
+            .with_table(table, "key-value"),
+    )
 }
 
 fn run_action(doc: Map<String, Value>) {
@@ -298,6 +298,16 @@ mod tests {
         ));
         assert_eq!(result.status, sdk::ActionStatus::Failed);
         assert_eq!(result.error_class.as_deref(), Some("config_error"));
+    }
+
+    #[test]
+    fn scheduled_check_rejects_a_string_fault_duration() {
+        let doc = json!({"fault_kind": "power_loss", "fault_duration_seconds": "30"})
+            .as_object()
+            .expect("object")
+            .clone();
+        let err = scheduled_check(doc).expect_err("string duration");
+        assert!(err.to_string().contains("invalid type"), "{err}");
     }
 
     #[test]
