@@ -18,8 +18,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
       - name: Run clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Run clippy with RTSPS
         run: cargo clippy --all-targets --features rtsps --locked -- -D warnings
       - name: Run tests
+        run: cargo test --all-targets
+      - name: Run tests with RTSPS
         run: cargo test --all-targets --features rtsps
       - name: Build examples
         run: cargo build --examples

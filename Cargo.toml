@@ -11,7 +11,7 @@ homepage = "https://github.com/carverauto/serviceradar-sdk-rust"
 documentation = "https://docs.rs/serviceradar-sdk-rust"
 keywords = ["serviceradar", "sdk", "monitoring", "wasm"]
 categories = ["api-bindings", "wasm"]
-exclude = ["/.forgejo/**", "/.github/**", "/openspec/**", "/conformance/**"]
+exclude = ["/.forgejo/**", "/.github/**", "/openspec/**", "/conformance/runtime/**"]
 
 [lib]
 name = "serviceradar_sdk_rust"

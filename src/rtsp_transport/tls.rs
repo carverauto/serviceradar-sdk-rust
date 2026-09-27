@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
@@ -16,12 +16,22 @@ use crate::tcp::TcpConnection;
 struct HostSocket {
     conn: TcpConnection,
     timeout: Duration,
+    deadline: Option<Instant>,
+}
+
+impl HostSocket {
+    fn call_timeout(&self) -> Duration {
+        match self.deadline {
+            Some(deadline) => deadline.saturating_duration_since(Instant::now()),
+            None => self.timeout,
+        }
+    }
 }
 
 impl Read for HostSocket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.conn
-            .read(buf, self.timeout)
+            .read(buf, self.call_timeout())
             .map_err(|err| io::Error::other(err.to_string()))
     }
 }
@@ -29,7 +39,7 @@ impl Read for HostSocket {
 impl Write for HostSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.conn
-            .write(buf, self.timeout)
+            .write(buf, self.call_timeout())
             .map_err(|err| io::Error::other(err.to_string()))
     }
 
@@ -51,7 +61,11 @@ impl TlsConnection {
         timeout: Duration,
         insecure_skip_verify: bool,
     ) -> SdkResult<Self> {
-        let mut sock = HostSocket { conn, timeout };
+        let mut sock = HostSocket {
+            conn,
+            timeout,
+            deadline: Instant::now().checked_add(timeout),
+        };
         let result = Self::start(host, insecure_skip_verify).and_then(|mut tls| {
             while tls.is_handshaking() {
                 tls.complete_io(&mut sock).map_err(tls_io_error)?;
@@ -59,7 +73,10 @@ impl TlsConnection {
             Ok(tls)
         });
         match result {
-            Ok(tls) => Ok(Self { tls, sock }),
+            Ok(tls) => {
+                sock.deadline = None;
+                Ok(Self { tls, sock })
+            }
             Err(err) => {
                 let _ = sock.conn.close();
                 Err(err)
@@ -77,6 +94,7 @@ impl TlsConnection {
 
     pub(super) fn read(&mut self, buf: &mut [u8], timeout: Duration) -> SdkResult<usize> {
         self.sock.timeout = timeout;
+        self.sock.deadline = None;
         rustls::Stream::new(&mut self.tls, &mut self.sock)
             .read(buf)
             .map_err(tls_io_error)
@@ -84,6 +102,7 @@ impl TlsConnection {
 
     pub(super) fn write(&mut self, data: &[u8], timeout: Duration) -> SdkResult<usize> {
         self.sock.timeout = timeout;
+        self.sock.deadline = None;
         let mut stream = rustls::Stream::new(&mut self.tls, &mut self.sock);
         stream.write_all(data).map_err(tls_io_error)?;
         stream.flush().map_err(tls_io_error)?;
