@@ -343,9 +343,16 @@ cargo build --examples
 Build WebAssembly examples:
 
 ```bash
-rustup target add wasm32-unknown-unknown
-cargo build --examples --target wasm32-unknown-unknown
+rustup target add wasm32-wasip1
+cargo build --examples --target wasm32-wasip1
 ```
+
+Plugins target `wasm32-wasip1` because the agent's runtime provides WASI
+preview 1: wall-clock time, the monotonic clock and sleep. On
+`wasm32-unknown-unknown`, `Instant::now()`, `SystemTime::now()` and
+`thread::sleep` trap. `conformance/runtime` loads `examples/clock-check` into
+wazero with the agent's module configuration and fails if the clock or sleep
+does not work; CI runs it on every push.
 
 ## Run Overrides
 
