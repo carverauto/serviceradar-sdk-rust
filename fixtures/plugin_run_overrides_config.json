@@ -1,0 +1,28 @@
+{
+  "site": "campus-a",
+  "poll_seconds": 30,
+  "_serviceradar_run_overrides": {
+    "schema": "serviceradar.plugin_run_overrides.v1",
+    "overrides": [
+      {
+        "id": "fault-jam-7",
+        "kind": "conveyor_jam",
+        "target": "conveyor-7",
+        "params": {
+          "severity": "critical"
+        },
+        "starts_at": "2026-09-27T12:00:00Z",
+        "expires_at": "2026-09-27T12:10:00Z",
+        "expired": false
+      },
+      {
+        "id": "fault-saturation-2",
+        "kind": "channel_saturation",
+        "target": "ap-2",
+        "starts_at": "2026-09-27T11:40:00Z",
+        "expires_at": "2026-09-27T11:50:00Z",
+        "expired": true
+      }
+    ]
+  }
+}
