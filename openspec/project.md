@@ -3,7 +3,7 @@
 ## Purpose
 `serviceradar-sdk-rust` is the Rust implementation of the ServiceRadar plugin SDK. Its job is to let plugin authors write ServiceRadar checkers in Rust without dealing directly with low-level WebAssembly host calls.
 
-The near-term goal is feature parity with the Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go`. The Rust SDK should expose the same core capabilities with idiomatic Rust APIs:
+The near-term goal is feature parity with the Go SDK in [`serviceradar-sdk-go`](https://github.com/carverauto/serviceradar-sdk-go). The Rust SDK should expose the same core capabilities with idiomatic Rust APIs:
 - Host-provided config decoding
 - Result construction for `serviceradar.plugin_result.v1`
 - Logging to the ServiceRadar host
@@ -19,7 +19,7 @@ This repository is currently in bootstrap state. `openspec/project.md` should de
 - WebAssembly target for ServiceRadar plugins, mirroring the Go SDK's WASI/TinyGo deployment model
 - JSON-based payloads for config, results, requests, and host responses
 - Forgejo Actions CI/CD expected for test, packaging, and WASM build verification
-- Go SDK at `/Users/mfreeman/src/serviceradar-sdk-go` is the reference implementation for API coverage and behavior
+- Go SDK at [`serviceradar-sdk-go`](https://github.com/carverauto/serviceradar-sdk-go) is the reference implementation for API coverage and behavior
 
 Planned capability areas, based on the Go SDK layout:
 - Core SDK module surface: config, execution, logging, result building, error handling, memory/ABI helpers
@@ -97,5 +97,5 @@ Important domain concepts:
   - `serviceradar.plugin_result.v1`
   - `serviceradar.plugin_inputs.v1`
 - OCSF event model used for emitted events
-- Reference implementation in `/Users/mfreeman/src/serviceradar-sdk-go`
+- Reference implementation in [`serviceradar-sdk-go`](https://github.com/carverauto/serviceradar-sdk-go)
 - Forgejo Actions for CI/CD, including unit tests, crate packaging checks, and WASM example build checks

@@ -24,7 +24,7 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Typed credential broker grants, including OAuth2 client-credentials injection
 - Example plugins for HTTP, TCP, UDP, RTSP, widgets, WASI clock, and northbound actions
 
-The Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go` remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
+The Go SDK in [`serviceradar-sdk-go`](https://github.com/carverauto/serviceradar-sdk-go) remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
 
 In practice that means the common path uses concrete Rust domain types like `PluginResult`, `Widget`, `Event`, and `HttpClient`, while Go-specific convenience aliases are intentionally avoided on the public surface.
 
