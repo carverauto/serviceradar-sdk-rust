@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -20,12 +20,19 @@ pub struct RtspEndpoint {
 }
 
 impl RtspEndpoint {
-    pub fn parse(raw_url: &str, username: &str, password: &str) -> SdkResult<Self> {
-        parse_rtsp_endpoint(raw_url, username, password)
+    /// Parses an RTSP or RTSPS URL. `username` and `default_password` are used
+    /// only when the URL carries no userinfo, matching the Go SDK's override
+    /// parameters.
+    pub fn parse(raw_url: &str, username: &str, default_password: &str) -> SdkResult<Self> {
+        parse_rtsp_endpoint(raw_url, username, default_password)
     }
 
     pub fn authority(&self) -> String {
-        format!("{}:{}", self.host, self.port)
+        if self.host.contains(':') {
+            format!("[{}]:{}", self.host, self.port)
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
     }
 
     pub fn build_request(
@@ -297,15 +304,20 @@ where
 pub fn parse_rtsp_endpoint(
     raw_url: &str,
     username: &str,
-    password: &str,
+    default_password: &str,
 ) -> SdkResult<RtspEndpoint> {
     let parsed = Url::parse(raw_url.trim()).map_err(|_| Error::RtspInvalidUrl)?;
     let scheme = parsed.scheme().trim().to_ascii_lowercase();
-    if parsed.host_str().unwrap_or_default().is_empty() || (scheme != "rtsp" && scheme != "rtsps") {
+    let display_host = parsed.host_str().unwrap_or_default();
+    let host = display_host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(display_host);
+    if host.is_empty() || (scheme != "rtsp" && scheme != "rtsps") {
         return Err(Error::RtspInvalidUrl);
     }
 
-    let host = parsed.host_str().unwrap_or_default().to_string();
+    let host = host.to_string();
     let port = if let Some(port) = parsed.port() {
         port
     } else if scheme == "rtsps" {
@@ -315,7 +327,7 @@ pub fn parse_rtsp_endpoint(
     };
 
     let mut username = username.to_string();
-    let mut password = password.to_string();
+    let mut password = default_password.to_string();
     if !parsed.username().is_empty() {
         username = parsed.username().to_string();
     }
@@ -333,8 +345,8 @@ pub fn parse_rtsp_endpoint(
     };
 
     let authority = match parsed.port() {
-        Some(port) => format!("{host}:{port}"),
-        None => host.clone(),
+        Some(port) => format!("{display_host}:{port}"),
+        None => display_host.to_string(),
     };
 
     Ok(RtspEndpoint {
@@ -533,18 +545,13 @@ pub fn parse_rtsp_response(data: &[u8]) -> SdkResult<RtspResponse> {
         .and_then(|value| value.parse::<i32>().ok())
         .ok_or(Error::RtspBadResponse)?;
 
+    let content_length = content_length_from_headers(&head);
     let mut headers = BTreeMap::new();
-    let mut content_length = 0_usize;
     for line in lines {
         let Some((key, value)) = line.split_once(':') else {
             continue;
         };
-        let key = key.trim().to_ascii_lowercase();
-        let value = value.trim().to_string();
-        if key == "content-length" {
-            content_length = value.parse::<usize>().unwrap_or(0);
-        }
-        headers.insert(key, value);
+        headers.insert(key.trim().to_ascii_lowercase(), value.trim().to_string());
     }
 
     let mut body = body.to_vec();
@@ -561,13 +568,73 @@ pub fn parse_rtsp_response(data: &[u8]) -> SdkResult<RtspResponse> {
     })
 }
 
+const RTSP_RESPONSE_LIMIT: usize = 1024 * 1024;
+const RTSP_READ_CHUNK: usize = 64 * 1024;
+
 pub fn read_rtsp_response<T>(conn: &mut T, timeout: Duration) -> SdkResult<RtspResponse>
 where
     T: RtspTransport,
 {
-    let mut buf = vec![0_u8; 64 * 1024];
-    let len = conn.read(&mut buf, timeout)?;
-    parse_rtsp_response(&buf[..len])
+    let started = Instant::now();
+    let mut buf = Vec::new();
+    let mut chunk = vec![0_u8; RTSP_READ_CHUNK];
+    loop {
+        match rtsp_response_deficit(&buf)? {
+            None => return parse_rtsp_response(&buf),
+            Some(want) => {
+                let remaining = read_budget(started, timeout)?;
+                let want = want.min(chunk.len());
+                let n = conn.read(&mut chunk[..want], remaining)?;
+                if n == 0 {
+                    return Err(Error::RtspBadResponse);
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+        }
+    }
+}
+
+fn read_budget(started: Instant, timeout: Duration) -> SdkResult<Duration> {
+    let remaining = timeout.saturating_sub(started.elapsed());
+    if remaining < Duration::from_millis(1) {
+        return Err(Error::Message("rtsp read deadline exceeded".to_string()));
+    }
+    Ok(remaining)
+}
+
+fn rtsp_response_deficit(data: &[u8]) -> SdkResult<Option<usize>> {
+    if let Some((head, body)) = data.split_once_str(b"\r\n\r\n") {
+        let head = String::from_utf8_lossy(head);
+        let status_line = head.split("\r\n").next().unwrap_or_default();
+        if !status_line.starts_with("RTSP/1.0 ") {
+            return Err(Error::RtspBadResponse);
+        }
+        let content_length = content_length_from_headers(&head);
+        if content_length > RTSP_RESPONSE_LIMIT {
+            return Err(Error::RtspBadResponse);
+        }
+        if body.len() >= content_length {
+            return Ok(None);
+        }
+        return Ok(Some(content_length - body.len()));
+    }
+    if data.len() >= RTSP_RESPONSE_LIMIT {
+        return Err(Error::RtspBadResponse);
+    }
+    Ok(Some(RTSP_READ_CHUNK))
+}
+
+fn content_length_from_headers(head: &str) -> usize {
+    let mut content_length = 0_usize;
+    for line in head.split("\r\n").skip(1) {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if key.trim().eq_ignore_ascii_case("content-length") {
+            content_length = value.trim().parse::<usize>().unwrap_or(0);
+        }
+    }
+    content_length
 }
 
 pub fn parse_h264_track_from_sdp(endpoint: &RtspEndpoint, body: &[u8]) -> SdkResult<RtspH264Track> {

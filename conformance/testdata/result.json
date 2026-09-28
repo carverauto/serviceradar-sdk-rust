@@ -1,0 +1,59 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "result",
+  "scenario": {},
+  "replies": {},
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "submit_result",
+      "args": {
+        "payload": {
+          "json": {
+            "details": "golden result payload",
+            "display": [
+              {
+                "data": {
+                  "latency_ms": "4"
+                },
+                "layout": "key-value",
+                "widget": "table"
+              }
+            ],
+            "events": [
+              {
+                "activity_id": 1,
+                "activity_name": "Create",
+                "category_uid": 1,
+                "class_uid": 1008,
+                "id": "evt-conformance-1",
+                "log_name": "events.ocsf.processed",
+                "log_provider": "serviceradar-plugin",
+                "message": "conformance event",
+                "metadata": {
+                  "version": "1.7.0"
+                },
+                "severity": "Informational",
+                "severity_id": 1,
+                "time": "2026-09-27T12:00:00Z",
+                "type_uid": 100801
+              }
+            ],
+            "labels": {
+              "camera": "cam-1"
+            },
+            "observed_at": "2026-09-27T12:00:00Z",
+            "schema_version": 1,
+            "status": "OK",
+            "summary": "conformance ok"
+          }
+        }
+      },
+      "returns": {
+        "code": 0
+      }
+    }
+  ]
+}

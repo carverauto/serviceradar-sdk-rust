@@ -1,0 +1,84 @@
+id: northbound-actions
+name: Northbound Actions
+version: 0.1.0
+description: >
+  Demonstrates northbound actions with deterministic simulated results:
+  device lookup (immediate and deferred), and fault injection that leaves
+  time-bounded run overrides for later scheduled runs.
+entrypoint: run_check
+runtime: wasi-preview1
+outputs: serviceradar.plugin_result.v1
+capabilities:
+  - get_config
+  - log
+  - submit_result
+  - emit_telemetry
+resources:
+  requested_memory_mb: 64
+  requested_cpu_ms: 2000
+actions:
+  - action_id: sample.device.lookup
+    version: 1.0.0
+    label: Sample Device Lookup
+    description: Query the simulated inventory for selected device facts.
+    scopes:
+      - device
+    required_context:
+      - device.uid
+    timeout_seconds: 30
+    safety_classification: read_only
+    requires_confirmation: false
+    result_schema_version: serviceradar.northbound_action_result.v1
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        execution_mode:
+          type: string
+          title: Execution mode
+          enum:
+            - immediate
+            - deferred
+          default: immediate
+  - action_id: sample.fault.inject
+    version: 1.0.0
+    label: Sample Fault Inject
+    description: Leave a time-bounded run override and emit the opening event.
+    scopes:
+      - device
+    required_context:
+      - device.uid
+    timeout_seconds: 30
+    safety_classification: standard
+    requires_confirmation: true
+    max_override_duration_seconds: 3600
+    result_schema_version: serviceradar.northbound_action_result.v1
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fault_id:
+          type: string
+          title: Fault ID
+        target:
+          type: string
+          title: Target
+  - action_id: sample.fault.clear
+    version: 1.0.0
+    label: Sample Fault Clear
+    description: End a run override early with the resolving event.
+    scopes:
+      - device
+    required_context:
+      - device.uid
+    timeout_seconds: 30
+    safety_classification: standard
+    requires_confirmation: true
+    result_schema_version: serviceradar.northbound_action_result.v1
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fault_id:
+          type: string
+          title: Fault ID

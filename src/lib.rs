@@ -7,6 +7,8 @@ mod camera_plugin;
 mod camera_relay;
 mod check_descriptor;
 mod config;
+#[cfg(test)]
+mod conformance;
 mod device_discovery;
 mod error;
 mod execute;
@@ -22,6 +24,7 @@ mod plugin_inputs;
 mod producer_schedule;
 mod result;
 mod rtsp;
+mod rtsp_transport;
 mod run_override;
 mod tcp;
 mod telemetry;
@@ -53,6 +56,7 @@ pub use camera_relay::{CameraRelayConfig, with_url_user_info};
 pub use check_descriptor::{
     CheckDescriptor, RESULT_SCHEMA_TARGET_CHECK_V1, TARGET_KIND_DEVICE, TARGET_KIND_SERVICE,
 };
+pub use config::MAX_PAYLOAD_BYTES;
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
 pub use device_discovery::{
     DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice,
@@ -63,7 +67,10 @@ pub use error::{
     HostErrorCode, SdkResult, host_error,
 };
 pub use execute::{ExecuteErrorWithResult, execute, execute_partial, submit_result_payload};
-pub use http::{HttpClient, HttpRequest, HttpResponse, MAX_HTTP_RESPONSE_BYTES};
+pub use http::{
+    HTTP, HTTP_RESPONSE_MODE_STATUS_BODY, HttpClient, HttpRequest, HttpResponse,
+    MAX_HTTP_RESPONSE_BYTES,
+};
 pub use log::{LOG, LogLevel, Logger};
 pub use manifest::{
     ManifestValidationError, OUTPUTS_CAMERA_STREAM, OUTPUTS_PLUGIN_RESULT, OUTPUTS_PROXMOX_CONSOLE,
@@ -103,6 +110,7 @@ pub use rtsp::{
     AuthChallenge, H264Depacketizer, InterleavedFrame, StreamClient, StreamEndpoint,
     StreamResponse, VideoTrack,
 };
+pub use rtsp_transport::{RtspConnection, dial_rtsp_transport};
 pub use run_override::{
     RUN_OVERRIDE_OP_END, RUN_OVERRIDE_OP_SET, RUN_OVERRIDES_CONFIG_KEY, RUN_OVERRIDES_SCHEMA_V1,
     RunOverride, RunOverrideOperation, emit_ocsf_event, parse_run_overrides, run_overrides,

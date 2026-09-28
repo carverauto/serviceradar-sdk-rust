@@ -101,6 +101,14 @@ impl CheckDescriptor {
         self
     }
 
+    pub fn with_optional_target_fields(
+        mut self,
+        fields: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.optional_target_fields = fields.into_iter().map(Into::into).collect();
+        self
+    }
+
     pub fn with_required_capabilities(
         mut self,
         capabilities: impl IntoIterator<Item = impl Into<String>>,
@@ -114,8 +122,23 @@ impl CheckDescriptor {
         self
     }
 
+    pub fn with_schedule_bounds(mut self, bounds: BTreeMap<String, Value>) -> Self {
+        self.schedule_bounds = bounds;
+        self
+    }
+
     pub fn with_timeout_bounds(mut self, bounds: BTreeMap<String, Value>) -> Self {
         self.timeout_bounds = bounds;
+        self
+    }
+
+    pub fn with_threshold_schema(mut self, schema: BTreeMap<String, Value>) -> Self {
+        self.threshold_schema = schema;
+        self
+    }
+
+    pub fn with_display_contract_ref(mut self, reference: impl Into<String>) -> Self {
+        self.display_contract_ref = Some(reference.into());
         self
     }
 

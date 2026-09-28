@@ -50,3 +50,30 @@ fn map<const N: usize>(entries: [(&str, Value); N]) -> BTreeMap<String, Value> {
         .map(|(key, value)| (key.to_string(), value))
         .collect()
 }
+
+#[test]
+fn builders_cover_every_go_descriptor_field() {
+    let descriptor = CheckDescriptor::new("svc.http", "1.0.0", "HTTP")
+        .with_optional_target_fields(["port", "path"])
+        .with_schedule_bounds(BTreeMap::from([(
+            "min_interval_seconds".to_string(),
+            json!(30),
+        )]))
+        .with_threshold_schema(BTreeMap::from([(
+            "latency_ms".to_string(),
+            json!({"type": "number"}),
+        )]))
+        .with_display_contract_ref("serviceradar.display.http.v1");
+
+    let value = serde_json::to_value(&descriptor).expect("serialize");
+    assert_eq!(value["optional_target_fields"], json!(["port", "path"]));
+    assert_eq!(value["schedule_bounds"]["min_interval_seconds"], json!(30));
+    assert_eq!(
+        value["threshold_schema"]["latency_ms"]["type"],
+        json!("number")
+    );
+    assert_eq!(
+        value["display_contract_ref"],
+        json!("serviceradar.display.http.v1")
+    );
+}

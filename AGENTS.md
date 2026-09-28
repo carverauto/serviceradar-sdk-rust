@@ -26,6 +26,6 @@ gate's test agent:
   between runs: `export CARGO_TARGET_DIR="$HOME/.cache/serviceradar-sdk-rust/target"`.
 - Run `cargo test --all-targets` and `cargo clippy --all-targets --locked -- -D warnings`
   for the change. Add focused tests for the behaviour the branch changes.
-- Leave `cargo build --examples --target wasm32-unknown-unknown` and
+- Leave `cargo build --examples --target wasm32-wasip1`, the `conformance/runtime` wazero run, and
   `cargo publish --dry-run` to GitHub CI (`.github/workflows/ci.yml` runs both on
   every pull request) unless the branch changes an example or the packaging.

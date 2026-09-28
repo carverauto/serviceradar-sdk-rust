@@ -226,9 +226,18 @@ impl HostBackend for LocalHostBackend {
             Ok(request) => request,
             Err(_) => return HOST_ERR_INVALID,
         };
-        let response_payload = match handler(request)
-            .and_then(|response| encode_local_http_response(&response).map_err(Error::from))
-        {
+        let status_body = request.response_mode.trim().is_empty()
+            || request
+                .response_mode
+                .trim()
+                .eq_ignore_ascii_case(crate::http::HTTP_RESPONSE_MODE_STATUS_BODY);
+        let response_payload = match handler(request).and_then(|response| {
+            if status_body {
+                Ok(encode_local_status_body_response(&response))
+            } else {
+                encode_local_http_response(&response).map_err(Error::from)
+            }
+        }) {
             Ok(payload) => payload,
             Err(_) => return HOST_ERR_INTERNAL,
         };
@@ -284,6 +293,8 @@ struct LocalHttpRequestPayload {
     body: Option<String>,
     body_base64: Option<String>,
     #[serde(default)]
+    response_mode: String,
+    #[serde(default)]
     timeout_ms: u32,
     #[serde(default)]
     insecure_skip_verify: bool,
@@ -319,9 +330,16 @@ fn decode_local_http_request(payload: &[u8]) -> SdkResult<HttpRequest> {
         headers: payload.headers,
         body,
         body_base64,
+        response_mode: payload.response_mode,
         timeout_ms: payload.timeout_ms,
         insecure_skip_verify: payload.insecure_skip_verify,
     })
+}
+
+fn encode_local_status_body_response(response: &HttpResponse) -> Vec<u8> {
+    let mut payload = format!("{}\n", response.status).into_bytes();
+    payload.extend_from_slice(&response.body);
+    payload
 }
 
 fn encode_local_http_response(response: &HttpResponse) -> serde_json::Result<Vec<u8>> {

@@ -11,7 +11,7 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Host-provided config loading
 - Result construction and serialization for `serviceradar.plugin_result.v1`
 - Host logging
-- Host-proxied HTTP, TCP, UDP, and WebSocket helpers
+- Host-proxied HTTP, TCP, UDP, WebSocket, and RTSP/RTSPS helpers
 - Policy input parsing and validation for `serviceradar.plugin_inputs.v1`
 - Camera/media helpers and RTSP parsing/depacketization utilities
 - Signal schema/display contract references for package-managed logs and events
@@ -19,7 +19,7 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Advisory-feed contract builders and gateway-mediated artifact staging helpers
 - First-class metric telemetry helpers for canonical `serviceradar.metric.v1` payloads
 - Run overrides that let an action leave time-bounded state for later scheduled runs, and `emit_ocsf_event` for OCSF events from any entrypoint
-- Example plugins for HTTP, TCP, UDP, and widget-rich results
+- Example plugins for HTTP, TCP, UDP, RTSP, widgets, WASI clock, and northbound actions
 
 The Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go` remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
 
@@ -77,10 +77,13 @@ pub extern "C" fn run_check() {
 
 ## Examples
 
+- `clock-check`
 - `http-check`
 - `tcp-check`
 - `udp-check`
+- `rtsp-check`
 - `widgets-check`
+- `northbound-actions`
 
 ## Signal display contracts
 
@@ -343,9 +346,16 @@ cargo build --examples
 Build WebAssembly examples:
 
 ```bash
-rustup target add wasm32-unknown-unknown
-cargo build --examples --target wasm32-unknown-unknown
+rustup target add wasm32-wasip1
+cargo build --examples --target wasm32-wasip1
 ```
+
+Plugins target `wasm32-wasip1` because the agent's runtime provides WASI
+preview 1: wall-clock time, the monotonic clock and sleep. On
+`wasm32-unknown-unknown`, `Instant::now()`, `SystemTime::now()` and
+`thread::sleep` trap. `conformance/runtime` loads `examples/clock-check` into
+wazero with the agent's module configuration and fails if the clock or sleep
+does not work; CI runs it on every push.
 
 ## Run Overrides
 

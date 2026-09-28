@@ -1,0 +1,64 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "plugin_inputs",
+  "scenario": {
+    "document": {
+      "agent_id": "agent-a",
+      "generated_at": "2026-09-27T12:00:00Z",
+      "inputs": [
+        {
+          "chunk_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "chunk_index": 0,
+          "chunk_total": 1,
+          "entity": "devices",
+          "items": [
+            {
+              "ip": "192.0.2.11",
+              "uid": "sr:device:1"
+            },
+            {
+              "ip": "192.0.2.12",
+              "uid": "sr:device:2"
+            }
+          ],
+          "name": "cameras",
+          "query": "in:devices vendor:AXIS"
+        }
+      ],
+      "policy_id": "policy-1",
+      "policy_version": 3,
+      "schema": "serviceradar.plugin_inputs.v1"
+    }
+  },
+  "replies": {},
+  "output": [
+    {
+      "chunk_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "chunk_index": 0,
+      "chunk_total": 1,
+      "entity": "devices",
+      "item": {
+        "ip": "192.0.2.11",
+        "uid": "sr:device:1"
+      },
+      "name": "cameras",
+      "query": "in:devices vendor:AXIS"
+    },
+    {
+      "chunk_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "chunk_index": 0,
+      "chunk_total": 1,
+      "entity": "devices",
+      "item": {
+        "ip": "192.0.2.12",
+        "uid": "sr:device:2"
+      },
+      "name": "cameras",
+      "query": "in:devices vendor:AXIS"
+    }
+  ],
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": []
+}

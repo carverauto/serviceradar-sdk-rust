@@ -1,0 +1,28 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "udp",
+  "scenario": {
+    "addr": "192.0.2.10",
+    "payload": "stale-probe",
+    "port": 8125,
+    "timeout_ms": 2000
+  },
+  "replies": {},
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "udp_send_to",
+      "args": {
+        "addr": "192.0.2.10",
+        "payload": "stale-probe",
+        "port": 8125,
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "code": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "format": "serviceradar-sdk-conformance/v1",
+  "capability": "tcp",
+  "scenario": {
+    "addr": "192.0.2.10",
+    "port": 8080,
+    "timeout_ms": 2000,
+    "write": "PING"
+  },
+  "replies": {
+    "tcp_reads": [
+      "PONG"
+    ]
+  },
+  "produced_by": {
+    "sdk": "go"
+  },
+  "calls": [
+    {
+      "func": "tcp_connect",
+      "args": {
+        "addr": "192.0.2.10",
+        "port": 8080,
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "handle": 7
+      }
+    },
+    {
+      "func": "tcp_write",
+      "args": {
+        "data": "PING",
+        "handle": 7,
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "n": 4
+      }
+    },
+    {
+      "func": "tcp_read",
+      "args": {
+        "handle": 7,
+        "timeout_ms": 2000
+      },
+      "returns": {
+        "data": "PONG",
+        "n": 4
+      }
+    },
+    {
+      "func": "tcp_close",
+      "args": {
+        "handle": 7
+      },
+      "returns": {
+        "code": 0
+      }
+    }
+  ]
+}

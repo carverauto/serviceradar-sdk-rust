@@ -1,0 +1,29 @@
+{
+  "schema": "serviceradar.northbound_action_result.v1",
+  "status": "result_fetching",
+  "summary": {
+    "message": "External task completed; fetching results"
+  },
+  "external_correlation_id": "hpna-job-123",
+  "continuation_state": {
+    "external_task_id": "hpna-job-123",
+    "stage": "result_fetch"
+  },
+  "next_poll_delay_seconds": 10,
+  "targets": [
+    {
+      "device_uid": "sr:device-1",
+      "interface_uid": "if-1",
+      "status": "result_fetching",
+      "result": {
+        "message": "Result document not ready"
+      },
+      "external_correlation_id": "hpna-job-123",
+      "continuation_state": {
+        "external_task_id": "hpna-job-123",
+        "stage": "result_fetch"
+      },
+      "next_poll_delay_seconds": 10
+    }
+  ]
+}
