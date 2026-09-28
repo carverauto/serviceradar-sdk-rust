@@ -13,10 +13,16 @@ use super::{
 struct FakeRtspTransport {
     writes: Vec<Vec<u8>>,
     reads: VecDeque<Vec<u8>>,
+    read_timeouts: Vec<Duration>,
+    read_hold: Duration,
 }
 
 impl super::RtspTransport for FakeRtspTransport {
-    fn read(&mut self, buf: &mut [u8], _timeout: Duration) -> SdkResult<usize> {
+    fn read(&mut self, buf: &mut [u8], timeout: Duration) -> SdkResult<usize> {
+        self.read_timeouts.push(timeout);
+        if !self.read_hold.is_zero() && self.read_timeouts.len() == 1 {
+            std::thread::sleep(self.read_hold);
+        }
         let payload = self.reads.pop_front().unwrap_or_default();
         let len = payload.len().min(buf.len());
         buf[..len].copy_from_slice(&payload[..len]);
@@ -221,11 +227,65 @@ fn read_rtsp_response_reads_from_transport() {
     let mut transport = FakeRtspTransport {
         writes: Vec::new(),
         reads: VecDeque::from([b"RTSP/1.0 200 OK\r\nCSeq: 1\r\n\r\n".to_vec()]),
+        ..Default::default()
     };
 
     let response = RtspResponse::read_from(&mut transport, Duration::from_secs(1))
         .expect("read rtsp response");
     assert_eq!(response.status_code, 200);
+    assert_eq!(transport.read_timeouts.len(), 1);
+}
+
+#[test]
+fn read_rtsp_response_joins_split_body_under_one_deadline_and_stops() {
+    let mut transport = FakeRtspTransport {
+        reads: VecDeque::from([
+            b"RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 11\r\n\r\nhel".to_vec(),
+            b"lo world".to_vec(),
+            b"RTSP/1.0 200 OK\r\nCSeq: 3\r\n\r\n".to_vec(),
+        ]),
+        read_hold: Duration::from_millis(80),
+        ..Default::default()
+    };
+
+    let response = RtspResponse::read_from(&mut transport, Duration::from_millis(500))
+        .expect("assembled response");
+    assert_eq!(response.status_code, 200);
+    assert_eq!(response.content_length, 11);
+    assert_eq!(response.body, b"hello world");
+    assert_eq!(transport.reads.len(), 1, "read past the completed message");
+    assert_eq!(transport.read_timeouts.len(), 2);
+    assert!(
+        transport
+            .read_timeouts
+            .iter()
+            .all(|timeout| *timeout >= Duration::from_millis(1)),
+        "host read used a zero timeout: {:?}",
+        transport.read_timeouts
+    );
+    assert!(
+        transport.read_timeouts[1] + Duration::from_millis(40) < transport.read_timeouts[0],
+        "later read kept a fresh timeout: {:?}",
+        transport.read_timeouts
+    );
+}
+
+#[test]
+fn read_rtsp_response_does_not_read_after_the_deadline() {
+    let mut transport = FakeRtspTransport {
+        reads: VecDeque::from([
+            b"RTSP/1.0 200 OK\r\nContent-Length: 5\r\n\r\n".to_vec(),
+            b"hello".to_vec(),
+        ]),
+        read_hold: Duration::from_millis(80),
+        ..Default::default()
+    };
+
+    let err =
+        RtspResponse::read_from(&mut transport, Duration::from_millis(30)).expect_err("deadline");
+    assert!(err.to_string().contains("deadline"), "{err}");
+    assert_eq!(transport.read_timeouts.len(), 1);
+    assert_eq!(transport.reads.len(), 1);
 }
 
 #[test]
@@ -237,6 +297,7 @@ fn rtsp_client_retries_digest_challenge_and_tracks_session() {
             b"RTSP/1.0 200 OK\r\nCSeq: 2\r\nSession: session-1;timeout=60\r\n\r\n".to_vec(),
             b"RTSP/1.0 200 OK\r\nCSeq: 3\r\n\r\n".to_vec(),
         ]),
+        ..Default::default()
     };
 
     let endpoint = parse_rtsp_endpoint("rtsp://root:secret@10.0.0.5/axis-media/media.amp", "", "")

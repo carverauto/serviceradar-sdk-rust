@@ -50,7 +50,7 @@ pub extern "C" fn run_check() {
             return;
         }
     };
-    let doc: Map<String, Value> = match serde_json::from_slice(&raw) {
+    let doc = match host_document(&raw) {
         Ok(doc) => doc,
         Err(err) => {
             let _ =
@@ -63,6 +63,13 @@ pub extern "C" fn run_check() {
     } else {
         run_scheduled(doc);
     }
+}
+
+fn host_document(raw: &[u8]) -> Result<Map<String, Value>, serde_json::Error> {
+    if raw.is_empty() {
+        return Ok(Map::new());
+    }
+    serde_json::from_slice(raw)
 }
 
 fn run_scheduled(doc: Map<String, Value>) {
@@ -298,6 +305,19 @@ mod tests {
         ));
         assert_eq!(result.status, sdk::ActionStatus::Failed);
         assert_eq!(result.error_class.as_deref(), Some("config_error"));
+    }
+
+    #[test]
+    fn empty_host_config_is_a_scheduled_document() {
+        let doc = host_document(b"").expect("empty config");
+        assert!(!doc.contains_key("action_invocation"));
+        let config = serde_json::from_value::<Config>(Value::Object(doc))
+            .expect("default config")
+            .normalized();
+        assert_eq!(config.fault_kind, "link_degraded");
+        assert_eq!(config.fault_duration_seconds, 600);
+        assert!(host_document(b"{").is_err());
+        assert!(host_document(br#"{"fault_duration_seconds":"30"}"#).is_ok());
     }
 
     #[test]

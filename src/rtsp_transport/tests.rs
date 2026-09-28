@@ -81,6 +81,89 @@ fn plain_rtsp_dials_host_tcp_and_carries_requests() {
     assert!(wire.closed);
 }
 
+struct ShortWriteHost {
+    timeouts: Arc<Mutex<Vec<u32>>>,
+    writes: u32,
+    hold_first: Duration,
+    byte_at_a_time: bool,
+}
+
+impl TestHostBackend for ShortWriteHost {
+    fn tcp_connect(&mut self, _addr: &[u8], _port: u32, _timeout_ms: u32) -> i32 {
+        7
+    }
+
+    fn tcp_write(&mut self, _handle: u32, buf: &[u8], timeout_ms: u32) -> i32 {
+        self.timeouts.lock().expect("timeouts").push(timeout_ms);
+        self.writes += 1;
+        if self.writes == 1 && !self.hold_first.is_zero() {
+            std::thread::sleep(self.hold_first);
+        }
+        if self.byte_at_a_time {
+            return 1;
+        }
+        buf.len() as i32
+    }
+
+    fn tcp_read(&mut self, _handle: u32, buf: &mut [u8], _timeout_ms: u32) -> i32 {
+        let msg = b"RTSP/1.0 200 OK\r\nCSeq: 1\r\n\r\n";
+        let n = msg.len().min(buf.len());
+        buf[..n].copy_from_slice(&msg[..n]);
+        n as i32
+    }
+}
+
+#[test]
+fn plain_write_keeps_one_deadline_across_short_writes() {
+    let timeouts = Arc::new(Mutex::new(Vec::new()));
+    let _guard = install_test_backend(Box::new(ShortWriteHost {
+        timeouts: Arc::clone(&timeouts),
+        writes: 0,
+        hold_first: Duration::from_millis(80),
+        byte_at_a_time: true,
+    }));
+
+    let endpoint =
+        RtspEndpoint::parse("rtsp://camera01.example.com:8554/stream", "", "").expect("endpoint");
+    let conn = dial_rtsp_transport(&endpoint, Duration::from_millis(500), false).expect("dial");
+    let mut client = RtspClient::new(conn, Duration::from_millis(500), endpoint.clone());
+    client
+        .do_request("OPTIONS", &endpoint.request_uri, &BTreeMap::new())
+        .expect("options");
+
+    let timeouts = timeouts.lock().expect("timeouts").clone();
+    assert!(timeouts.len() >= 2, "short writes: {timeouts:?}");
+    assert!(
+        timeouts.iter().all(|timeout| *timeout >= 1),
+        "host write used a zero timeout: {timeouts:?}"
+    );
+    assert!(
+        timeouts[1] + 40 < timeouts[0],
+        "later short write kept a fresh timeout: {timeouts:?}"
+    );
+}
+
+#[test]
+fn plain_write_does_not_call_the_host_after_the_deadline() {
+    let timeouts = Arc::new(Mutex::new(Vec::new()));
+    let _guard = install_test_backend(Box::new(ShortWriteHost {
+        timeouts: Arc::clone(&timeouts),
+        writes: 0,
+        hold_first: Duration::from_millis(80),
+        byte_at_a_time: true,
+    }));
+
+    let endpoint =
+        RtspEndpoint::parse("rtsp://camera01.example.com:8554/stream", "", "").expect("endpoint");
+    let conn = dial_rtsp_transport(&endpoint, Duration::from_millis(30), false).expect("dial");
+    let mut client = RtspClient::new(conn, Duration::from_millis(30), endpoint.clone());
+    let err = client
+        .do_request("OPTIONS", &endpoint.request_uri, &BTreeMap::new())
+        .expect_err("deadline");
+    assert!(err.to_string().contains("deadline"), "{err}");
+    assert_eq!(timeouts.lock().expect("timeouts").len(), 1);
+}
+
 #[cfg(not(feature = "rtsps"))]
 #[test]
 fn rtsps_without_the_feature_fails_instead_of_sending_plaintext() {
@@ -325,6 +408,41 @@ mod rtsps {
             "later record fragment kept a fresh timeout {reads:?}"
         );
         let _ = server.join().expect("server thread");
+    }
+
+    struct ZeroWriteHost {
+        writes: Arc<Mutex<u32>>,
+    }
+
+    impl TestHostBackend for ZeroWriteHost {
+        fn tcp_connect(&mut self, _addr: &[u8], _port: u32, _timeout_ms: u32) -> i32 {
+            4
+        }
+
+        fn tcp_write(&mut self, _handle: u32, _buf: &[u8], _timeout_ms: u32) -> i32 {
+            *self.writes.lock().expect("writes") += 1;
+            0
+        }
+    }
+
+    #[test]
+    fn rtsps_zero_write_fails_without_spinning() {
+        let writes = Arc::new(Mutex::new(0_u32));
+        let _guard = install_test_backend(Box::new(ZeroWriteHost {
+            writes: Arc::clone(&writes),
+        }));
+
+        let endpoint =
+            RtspEndpoint::parse("rtsps://camera01.example.com/stream", "", "").expect("endpoint");
+        let started = std::time::Instant::now();
+        let err =
+            dial_rtsp_transport(&endpoint, Duration::from_secs(2), true).expect_err("zero write");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "handshake spun until the deadline"
+        );
+        assert_eq!(*writes.lock().expect("writes"), 1);
+        assert!(err.to_string().contains("no progress"), "{err}");
     }
 
     struct StallingHost {

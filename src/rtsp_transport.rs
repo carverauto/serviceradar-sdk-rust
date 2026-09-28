@@ -3,7 +3,7 @@
 //! a pure-Rust crypto provider) on top of the host TCP connection, and needs
 //! the `rtsps` feature.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::error::{Error, SdkResult};
 use crate::rtsp::{RtspEndpoint, RtspTransport};
@@ -18,9 +18,11 @@ impl RtspTransport for TcpConnection {
     }
 
     fn write(&mut self, data: &[u8], timeout: Duration) -> SdkResult<usize> {
+        let started = Instant::now();
         let mut written = 0;
         while written < data.len() {
-            let n = TcpConnection::write(self, &data[written..], timeout)?;
+            let remaining = write_budget(started, timeout)?;
+            let n = TcpConnection::write(self, &data[written..], remaining)?;
             if n == 0 {
                 return Err(Error::Message("tcp write made no progress".to_string()));
             }
@@ -75,6 +77,14 @@ impl RtspTransport for RtspConnection {
             Self::Tls(conn) => conn.close(),
         }
     }
+}
+
+fn write_budget(started: Instant, timeout: Duration) -> SdkResult<Duration> {
+    let remaining = timeout.saturating_sub(started.elapsed());
+    if remaining < Duration::from_millis(1) {
+        return Err(Error::Message("tcp write deadline exceeded".to_string()));
+    }
+    Ok(remaining)
 }
 
 /// Opens an RTSP (`rtsp://`) or RTSPS (`rtsps://`) transport for a parsed

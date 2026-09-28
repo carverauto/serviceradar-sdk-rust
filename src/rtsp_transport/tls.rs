@@ -46,10 +46,21 @@ impl Read for HostSocket {
 
 impl Write for HostSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
         let timeout = self.host_timeout()?;
-        self.conn
+        let n = self
+            .conn
             .write(buf, timeout)
-            .map_err(|err| io::Error::other(err.to_string()))
+            .map_err(|err| io::Error::other(err.to_string()))?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "tcp write made no progress",
+            ));
+        }
+        Ok(n)
     }
 
     fn flush(&mut self) -> io::Result<()> {
