@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use crate::host::{TestHostBackend, install_test_backend};
@@ -46,6 +49,89 @@ impl TestHostBackend for PlainRtspHost {
     fn tcp_close(&mut self, handle: u32) -> i32 {
         assert_eq!(handle, 7);
         self.wire.lock().unwrap().closed = true;
+        0
+    }
+}
+
+/// Bridges the SDK's host TCP calls to a real loopback socket and records any
+/// bytes the plugin writes, for live assertions about what reaches the wire.
+#[cfg(not(feature = "rtsps"))]
+struct PlainLoopbackHost {
+    port: u16,
+    stream: Option<TcpStream>,
+    writes: Arc<Mutex<Vec<u8>>>,
+}
+
+#[cfg(not(feature = "rtsps"))]
+impl TestHostBackend for PlainLoopbackHost {
+    fn tcp_connect(&mut self, _addr: &[u8], _port: u32, _timeout_ms: u32) -> i32 {
+        let stream = TcpStream::connect(("127.0.0.1", self.port)).expect("loopback connect");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("read timeout");
+        self.stream = Some(stream);
+        9
+    }
+
+    fn tcp_read(&mut self, _handle: u32, buf: &mut [u8], _timeout_ms: u32) -> i32 {
+        match self.stream.as_mut().expect("connected").read(buf) {
+            Ok(n) => n as i32,
+            Err(_) => -1,
+        }
+    }
+
+    fn tcp_write(&mut self, _handle: u32, buf: &[u8], _timeout_ms: u32) -> i32 {
+        self.writes.lock().expect("writes").extend_from_slice(buf);
+        match self.stream.as_mut().expect("connected").write(buf) {
+            Ok(n) => n as i32,
+            Err(_) => -1,
+        }
+    }
+
+    fn tcp_close(&mut self, _handle: u32) -> i32 {
+        self.stream = None;
+        0
+    }
+}
+
+/// Bridges the SDK's host TCP calls to a real IPv6 loopback socket, recording
+/// the exact host string handed to the dial so brackets are observable.
+struct Ipv6LoopbackHost {
+    stream: Option<TcpStream>,
+    dialed: Arc<Mutex<Vec<(String, u32)>>>,
+}
+
+impl TestHostBackend for Ipv6LoopbackHost {
+    fn tcp_connect(&mut self, addr: &[u8], port: u32, _timeout_ms: u32) -> i32 {
+        let host = String::from_utf8_lossy(addr).into_owned();
+        self.dialed
+            .lock()
+            .expect("dialed")
+            .push((host.clone(), port));
+        let stream = TcpStream::connect((host.as_str(), port as u16)).expect("ipv6 connect");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("read timeout");
+        self.stream = Some(stream);
+        11
+    }
+
+    fn tcp_read(&mut self, _handle: u32, buf: &mut [u8], _timeout_ms: u32) -> i32 {
+        match self.stream.as_mut().expect("connected").read(buf) {
+            Ok(n) => n as i32,
+            Err(_) => -1,
+        }
+    }
+
+    fn tcp_write(&mut self, _handle: u32, buf: &[u8], _timeout_ms: u32) -> i32 {
+        match self.stream.as_mut().expect("connected").write(buf) {
+            Ok(n) => n as i32,
+            Err(_) => -1,
+        }
+    }
+
+    fn tcp_close(&mut self, _handle: u32) -> i32 {
+        self.stream = None;
         0
     }
 }
@@ -166,12 +252,8 @@ fn plain_write_does_not_call_the_host_after_the_deadline() {
 
 #[test]
 fn ipv6_literal_dials_without_brackets_and_keeps_them_in_urls() {
-    let wire = Arc::new(Mutex::new(Wire::default()));
-    let _guard = install_test_backend(Box::new(PlainRtspHost {
-        wire: Arc::clone(&wire),
-        reply: Vec::new(),
-    }));
-
+    // Parse level: the host handed to the dial loses its brackets while the
+    // reported/control URLs keep them.
     let endpoint =
         RtspEndpoint::parse("rtsp://[2001:db8::10]:8554/live", "", "").expect("endpoint");
     assert_eq!(endpoint.host, "2001:db8::10");
@@ -183,13 +265,6 @@ fn ipv6_literal_dials_without_brackets_and_keeps_them_in_urls() {
         "rtsp://[2001:db8::10]:8554/live/trackID=1"
     );
 
-    let conn = dial_rtsp_transport(&endpoint, Duration::from_secs(2), false).expect("dial");
-    drop(conn);
-    assert_eq!(
-        wire.lock().expect("wire").dialed,
-        vec![("2001:db8::10".to_string(), 8554)]
-    );
-
     let implicit = RtspEndpoint::parse("rtsps://[2001:db8::10]/stream", "", "").expect("endpoint");
     assert_eq!(implicit.host, "2001:db8::10");
     assert_eq!(implicit.port, 322);
@@ -198,28 +273,100 @@ fn ipv6_literal_dials_without_brackets_and_keeps_them_in_urls() {
         format!("{}{}", implicit.base_url, implicit.request_uri),
         "rtsps://[2001:db8::10]/stream"
     );
+
+    // Live: dial a real IPv6 loopback listener with a bracketed literal and
+    // confirm the host string handed to the socket has no brackets, while the
+    // reported URLs keep them.
+    let listener = TcpListener::bind("[::1]:0").expect("bind ipv6");
+    let port = listener.local_addr().expect("addr").port();
+    let server = thread::spawn(move || {
+        let (mut sock, _) = listener.accept().expect("accept");
+        sock.set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("read timeout");
+        let mut buf = [0_u8; 4096];
+        let n = sock.read(&mut buf).expect("read request");
+        let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+        sock.write_all(b"RTSP/1.0 200 OK\r\nCSeq: 1\r\nPublic: OPTIONS\r\n\r\n")
+            .expect("write response");
+        request
+    });
+
+    let dialed = Arc::new(Mutex::new(Vec::new()));
+    let _guard = install_test_backend(Box::new(Ipv6LoopbackHost {
+        stream: None,
+        dialed: Arc::clone(&dialed),
+    }));
+
+    let live =
+        RtspEndpoint::parse(&format!("rtsp://[::1]:{port}/live"), "", "").expect("endpoint");
+    assert_eq!(live.host, "::1");
+    assert_eq!(live.base_url, format!("rtsp://[::1]:{port}"));
+    assert_eq!(live.authority(), format!("[::1]:{port}"));
+
+    let conn = dial_rtsp_transport(&live, Duration::from_secs(2), false).expect("dial");
+    assert!(matches!(conn, RtspConnection::Plain(_)));
+    let mut client = RtspClient::new(conn, Duration::from_secs(2), live.clone());
+    let response = client
+        .do_request("OPTIONS", &live.request_uri, &BTreeMap::new())
+        .expect("options");
+    assert_eq!(response.status_code, 200);
+    client.close().expect("close");
+
+    assert_eq!(
+        dialed.lock().expect("dialed").as_slice(),
+        &[("::1".to_string(), u32::from(port))]
+    );
+    let request = server.join().expect("server thread");
+    assert!(request.starts_with("OPTIONS /live RTSP/1.0\r\n"), "{request}");
 }
 
 #[cfg(not(feature = "rtsps"))]
 #[test]
 fn rtsps_without_the_feature_fails_instead_of_sending_plaintext() {
-    let wire = Arc::new(Mutex::new(Wire::default()));
-    let _guard = install_test_backend(Box::new(PlainRtspHost {
-        wire: Arc::clone(&wire),
-        reply: Vec::new(),
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let received = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let server_received = Arc::clone(&received);
+    let server = thread::spawn(move || {
+        let (mut sock, _) = listener.accept().expect("accept");
+        sock.set_read_timeout(Some(Duration::from_millis(500)))
+            .expect("read timeout");
+        let mut buf = [0_u8; 4096];
+        loop {
+            match sock.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => server_received
+                    .lock()
+                    .expect("received")
+                    .extend_from_slice(&buf[..n]),
+                Err(_) => break,
+            }
+        }
+    });
+
+    let writes = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let _guard = install_test_backend(Box::new(PlainLoopbackHost {
+        port,
+        stream: None,
+        writes: Arc::clone(&writes),
     }));
 
     let endpoint =
-        RtspEndpoint::parse("rtsps://camera01.example.com/stream", "", "").expect("endpoint");
+        RtspEndpoint::parse(&format!("rtsps://127.0.0.1:{port}/stream"), "", "")
+            .expect("endpoint");
     let err = dial_rtsp_transport(&endpoint, Duration::from_secs(2), false)
         .expect_err("rtsps needs the feature");
-    assert!(err.to_string().contains("rtsps"));
-    let wire = wire.lock().unwrap();
+    assert!(err.to_string().contains("rtsps"), "{err}");
+
+    server.join().expect("server thread");
     assert!(
-        wire.written.is_empty(),
+        writes.lock().expect("writes").is_empty(),
         "no plaintext may be sent to an rtsps endpoint"
     );
-    assert!(wire.closed);
+    assert!(
+        received.lock().expect("received").is_empty(),
+        "the rtsps endpoint received plaintext bytes"
+    );
 }
 
 #[cfg(feature = "rtsps")]
