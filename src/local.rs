@@ -16,11 +16,17 @@ use serde_json::{Map, Value};
 
 use crate::config::MAX_PAYLOAD_BYTES;
 use crate::error::{
-    Error, HOST_ERR_INTERNAL, HOST_ERR_INVALID, HOST_ERR_NOT_FOUND, HOST_ERR_OK,
+    Error, HOST_ERR_DENIED, HOST_ERR_INTERNAL, HOST_ERR_INVALID, HOST_ERR_NOT_FOUND, HOST_ERR_OK,
     HOST_ERR_TOO_LARGE, SdkResult,
 };
 use crate::host::{self, HostBackend};
-use crate::{HttpRequest, HttpResponse};
+use crate::{CredentialBrokerGrant, HttpRequest, HttpResponse};
+
+mod credentials;
+mod grpc;
+
+pub use credentials::local_oauth2_bearer_token;
+pub use grpc::LocalGrpcHandler;
 
 pub const LOCAL_ENV_FILE_VARIABLE: &str = "SERVICERADAR_PLUGIN_ENV_FILE";
 pub const LOCAL_CONFIG_FILE_VARIABLE: &str = "SERVICERADAR_PLUGIN_CONFIG_FILE";
@@ -138,6 +144,18 @@ pub type LocalHttpHandler = Box<dyn FnMut(HttpRequest) -> SdkResult<HttpResponse
 pub struct LocalHostOptions {
     pub config_json: Vec<u8>,
     pub http_handler: Option<LocalHttpHandler>,
+    /// Serves `grpc_unary` calls. When `None`, gRPC calls fail with host error
+    /// `-4`, as on an agent without gRPC support.
+    pub grpc_handler: Option<LocalGrpcHandler>,
+    /// Broker grants the local host applies to outbound HTTP requests, as the
+    /// agent does. Grants of type `oauth2_client_credentials` are emulated: a
+    /// covered request gets a synthetic bearer token (see
+    /// [`local_oauth2_bearer_token`]). Other inject types are left to
+    /// `http_handler`.
+    pub credential_grants: Vec<CredentialBrokerGrant>,
+    /// Local credential material for `credential_grants`, usually
+    /// [`LocalInputs::credentials`]. The plugin never reads it.
+    pub credentials: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +181,9 @@ struct LocalHostState {
 struct LocalHostBackend {
     config_json: Vec<u8>,
     http_handler: Option<LocalHttpHandler>,
+    grpc_handler: Option<LocalGrpcHandler>,
+    credential_grants: Vec<CredentialBrokerGrant>,
+    credentials: BTreeMap<String, String>,
     state: Arc<Mutex<LocalHostState>>,
 }
 
@@ -222,10 +243,19 @@ impl HostBackend for LocalHostBackend {
         let Some(handler) = self.http_handler.as_mut() else {
             return HOST_ERR_NOT_FOUND;
         };
-        let request = match decode_local_http_request(request) {
+        let mut request = match decode_local_http_request(request) {
             Ok(request) => request,
             Err(_) => return HOST_ERR_INVALID,
         };
+        if credentials::apply_local_credential_grants(
+            &self.credential_grants,
+            &self.credentials,
+            &mut request,
+        )
+        .is_err()
+        {
+            return HOST_ERR_DENIED;
+        }
         let status_body = request.response_mode.trim().is_empty()
             || request
                 .response_mode
@@ -246,6 +276,10 @@ impl HostBackend for LocalHostBackend {
         }
         response[..response_payload.len()].copy_from_slice(&response_payload);
         response_payload.len() as i32
+    }
+
+    fn grpc_unary(&mut self, request: &[u8], response: &mut [u8]) -> i32 {
+        grpc::grpc_unary(self.grpc_handler.as_mut(), request, response)
     }
 }
 
@@ -268,6 +302,9 @@ where
     let backend = LocalHostBackend {
         config_json: options.config_json,
         http_handler: options.http_handler,
+        grpc_handler: options.grpc_handler,
+        credential_grants: options.credential_grants,
+        credentials: options.credentials,
         state: Arc::clone(&state),
     };
     let _guard = host::install_native_backend(Box::new(backend));

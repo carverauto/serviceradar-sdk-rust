@@ -15,6 +15,16 @@ Shared files:
 - `northbound_action_poll_request.json`
 - `northbound_action_polling_result.json`
 - `plugin_run_overrides_config.json`
+- `grpc_unary_request.json`
+- `grpc_unary_response_ok.json`
+- `grpc_unary_response_error.json`
+- `credential_grant_oauth2_client_credentials.json`
+
+`grpc_unary_request.json`, `grpc_unary_response_ok.json` and
+`grpc_unary_response_error.json` are the `grpc_unary` host ABI request and the
+two response shapes (OK and a non-OK status). All hosts, methods and messages
+are invented. `credential_grant_oauth2_client_credentials.json` is a credential
+broker grant with an `oauth2_client_credentials` inject spec and allow scope.
 
 They are not runtime defaults and operators are not expected to edit them.
 Synthetic values only: private (RFC 1918) or documentation (`192.0.2.0/24`,

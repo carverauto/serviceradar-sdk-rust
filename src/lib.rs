@@ -9,9 +9,11 @@ mod check_descriptor;
 mod config;
 #[cfg(test)]
 mod conformance;
+mod credential_grant;
 mod device_discovery;
 mod error;
 mod execute;
+mod grpc;
 mod host;
 mod http;
 #[cfg(not(target_arch = "wasm32"))]
@@ -58,6 +60,19 @@ pub use check_descriptor::{
 };
 pub use config::MAX_PAYLOAD_BYTES;
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
+pub use credential_grant::{
+    CREDENTIAL_INJECT_BASIC_AUTH, CREDENTIAL_INJECT_BEARER_TOKEN, CREDENTIAL_INJECT_FIELD_PREFIX,
+    CREDENTIAL_INJECT_FIXED_PREFIX, CREDENTIAL_INJECT_FORM_URLENCODED, CREDENTIAL_INJECT_HEADER,
+    CREDENTIAL_INJECT_HTTP_BASIC_AUTH, CREDENTIAL_INJECT_HTTP_HEADER, CREDENTIAL_INJECT_HTTP_QUERY,
+    CREDENTIAL_INJECT_KEY_ALLOW_INSECURE_TLS, CREDENTIAL_INJECT_KEY_HOST,
+    CREDENTIAL_INJECT_KEY_METHOD, CREDENTIAL_INJECT_KEY_NAME, CREDENTIAL_INJECT_KEY_PATH,
+    CREDENTIAL_INJECT_KEY_SCHEME, CREDENTIAL_INJECT_KEY_TOKEN_HOST,
+    CREDENTIAL_INJECT_KEY_TOKEN_METHOD, CREDENTIAL_INJECT_KEY_TOKEN_PATH,
+    CREDENTIAL_INJECT_KEY_TOKEN_PORT, CREDENTIAL_INJECT_KEY_TYPE,
+    CREDENTIAL_INJECT_OAUTH2_CLIENT_CREDENTIALS, CREDENTIAL_INJECT_OAUTH2_PASSWORD_BEARER,
+    CREDENTIAL_INJECT_QUERY, CREDENTIAL_INJECT_QUERY_PARAM, CredentialBrokerAllow,
+    OAuth2ClientCredentialsInject,
+};
 pub use device_discovery::{
     DEVICE_DISCOVERY_SCHEMA_V1, DeviceDiscovery, DeviceLocation, DiscoveredDevice,
 };
@@ -67,9 +82,13 @@ pub use error::{
     HostErrorCode, SdkResult, host_error,
 };
 pub use execute::{ExecuteErrorWithResult, execute, execute_partial, submit_result_payload};
+pub use grpc::{
+    CAPABILITY_GRPC_REQUEST, GRPC, GRPC_TRANSPORT_H2C, GRPC_TRANSPORT_TLS, GrpcClient, GrpcCode,
+    GrpcRequest, GrpcResponse, GrpcStatusError, GrpcTlsConfig, MAX_GRPC_RESPONSE_BYTES,
+};
 pub use http::{
-    HTTP, HTTP_RESPONSE_MODE_STATUS_BODY, HttpClient, HttpRequest, HttpResponse,
-    MAX_HTTP_RESPONSE_BYTES,
+    HTTP, HTTP_RESPONSE_MODE_ENVELOPE, HTTP_RESPONSE_MODE_STATUS_BODY, HttpClient, HttpRequest,
+    HttpResponse, MAX_HTTP_RESPONSE_BYTES,
 };
 pub use log::{LOG, LogLevel, Logger};
 pub use manifest::{

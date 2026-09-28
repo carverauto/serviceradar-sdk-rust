@@ -41,6 +41,10 @@ pub(crate) trait HostBackend: Send {
         HOST_ERR_NOT_FOUND
     }
 
+    fn grpc_unary(&mut self, _req: &[u8], _resp: &mut [u8]) -> i32 {
+        HOST_ERR_NOT_FOUND
+    }
+
     fn tcp_connect(&mut self, _addr: &[u8], _port: u32, _timeout_ms: u32) -> i32 {
         HOST_ERR_NOT_FOUND
     }
@@ -203,6 +207,8 @@ mod wasm {
         fn raw_artifact_abort(handle: u32) -> i32;
         #[link_name = "http_request"]
         fn raw_http_request(req_ptr: u32, req_len: u32, resp_ptr: u32, resp_len: u32) -> i32;
+        #[link_name = "grpc_unary"]
+        fn raw_grpc_unary(req_ptr: u32, req_len: u32, resp_ptr: u32, resp_len: u32) -> i32;
         #[link_name = "tcp_connect"]
         fn raw_tcp_connect(addr_ptr: u32, addr_len: u32, port: u32, timeout_ms: u32) -> i32;
         #[link_name = "tcp_read"]
@@ -310,6 +316,10 @@ mod wasm {
 
     pub(crate) fn http_request(req: &[u8], resp: &mut [u8]) -> i32 {
         unsafe { raw_http_request(ptr(req), req.len() as u32, mut_ptr(resp), resp.len() as u32) }
+    }
+
+    pub(crate) fn grpc_unary(req: &[u8], resp: &mut [u8]) -> i32 {
+        unsafe { raw_grpc_unary(ptr(req), req.len() as u32, mut_ptr(resp), resp.len() as u32) }
     }
 
     pub(crate) fn tcp_connect(addr: &[u8], port: u32, timeout_ms: u32) -> i32 {
@@ -483,6 +493,14 @@ pub(crate) fn http_request(req: &[u8], resp: &mut [u8]) -> i32 {
         .lock()
         .expect("host mutex poisoned")
         .http_request(req, resp)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn grpc_unary(req: &[u8], resp: &mut [u8]) -> i32 {
+    backend()
+        .lock()
+        .expect("host mutex poisoned")
+        .grpc_unary(req, resp)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

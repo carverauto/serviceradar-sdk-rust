@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::str;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -11,9 +11,13 @@ use crate::host;
 pub const MAX_HTTP_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Host response encoding that returns a decimal status line followed by the raw
-/// body. It is the default, and hosts that do not support it answer with the
-/// JSON envelope, which the client still decodes.
+/// body. Response headers are dropped. It is the default, and hosts that do not
+/// support it answer with the JSON envelope, which the client still decodes.
 pub const HTTP_RESPONSE_MODE_STATUS_BODY: &str = "status_body";
+
+/// Host response encoding that returns a JSON envelope which also carries the
+/// response headers. Multiple values for one header arrive comma-joined.
+pub const HTTP_RESPONSE_MODE_ENVELOPE: &str = "envelope";
 
 #[derive(Debug, Clone, Default)]
 pub struct HttpRequest {
@@ -22,7 +26,9 @@ pub struct HttpRequest {
     pub headers: BTreeMap<String, String>,
     pub body: Vec<u8>,
     pub body_base64: bool,
-    /// Host response encoding. Empty selects [`HTTP_RESPONSE_MODE_STATUS_BODY`].
+    /// Host response encoding. Empty selects [`HTTP_RESPONSE_MODE_STATUS_BODY`],
+    /// which drops response headers; set [`HTTP_RESPONSE_MODE_ENVELOPE`] to
+    /// receive them in [`HttpResponse::headers`].
     pub response_mode: String,
     pub timeout_ms: u32,
     pub insecure_skip_verify: bool,
@@ -81,6 +87,8 @@ impl HttpRequest {
     }
 }
 
+/// Proxied response data. `headers` is populated only in
+/// [`HTTP_RESPONSE_MODE_ENVELOPE`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HttpResponse {
     pub status: i32,
@@ -90,11 +98,36 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
+    /// Returns the named response header, matched case-insensitively.
     pub fn header(&self, name: &str) -> Option<&str> {
+        if let Some(value) = self.headers.get(name) {
+            return Some(value.as_str());
+        }
         self.headers
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
+    }
+
+    /// Parses the `Retry-After` header as delta-seconds or an HTTP-date. A date
+    /// in the past yields zero. Returns `None` when the header is absent or
+    /// malformed.
+    pub fn retry_after(&self) -> Option<Duration> {
+        self.retry_after_at(SystemTime::now())
+    }
+
+    pub(crate) fn retry_after_at(&self, now: SystemTime) -> Option<Duration> {
+        let value = self.header("Retry-After")?.trim();
+        let first = *value.as_bytes().first()?;
+        if first.is_ascii_digit() {
+            // Same ceiling as a Go time.Duration, so both SDKs reject the
+            // same inputs.
+            const MAX_SECONDS: u64 = (i64::MAX as u64) / 1_000_000_000;
+            let seconds = value.parse::<u64>().ok().filter(|s| *s <= MAX_SECONDS)?;
+            return Some(Duration::from_secs(seconds));
+        }
+        let at = parse_http_date(value)?;
+        Some(at.duration_since(now).unwrap_or(Duration::ZERO))
     }
 
     pub fn text(&self) -> SdkResult<&str> {
@@ -297,6 +330,98 @@ fn decode_envelope_response(payload: &[u8], duration: Duration) -> SdkResult<Htt
         body,
         duration,
     })
+}
+
+/// Parses the three HTTP-date forms of RFC 9110 section 5.6.7: IMF-fixdate
+/// (`Sun, 06 Nov 1994 08:49:37 GMT`), obsolete RFC 850
+/// (`Sunday, 06-Nov-94 08:49:37 GMT`) and asctime (`Sun Nov  6 08:49:37 1994`).
+fn parse_http_date(value: &str) -> Option<SystemTime> {
+    let fields: Vec<&str> = value.split_ascii_whitespace().collect();
+    let (weekday, day, month, year, clock) = match fields.as_slice() {
+        [weekday, day, month, year, clock, "GMT"] => (
+            weekday.strip_suffix(',')?,
+            *day,
+            *month,
+            parse_year(year)?,
+            *clock,
+        ),
+        [weekday, date, clock, "GMT"] => {
+            let mut parts = date.split('-');
+            let (day, month, year) = (parts.next()?, parts.next()?, parts.next()?);
+            if parts.next().is_some() || year.len() != 2 {
+                return None;
+            }
+            // RFC 850 two-digit years pivot the way Go's time package does.
+            let short = parse_year(year)?;
+            let year = if short >= 69 {
+                1900 + short
+            } else {
+                2000 + short
+            };
+            (weekday.strip_suffix(',')?, day, month, year, *clock)
+        }
+        [weekday, month, day, clock, year] => (*weekday, *day, *month, parse_year(year)?, *clock),
+        _ => return None,
+    };
+    if !is_weekday_name(weekday) || day.is_empty() || day.len() > 2 {
+        return None;
+    }
+
+    let month = time::Month::try_from(month_number(month)?).ok()?;
+    let day: u8 = day.parse().ok()?;
+    let date = time::Date::from_calendar_date(year, month, day).ok()?;
+    let mut clock_parts = clock.split(':');
+    let mut next_clock = || -> Option<u8> {
+        let part = clock_parts.next()?;
+        if part.len() != 2 {
+            return None;
+        }
+        part.parse().ok()
+    };
+    let (hour, minute, second) = (next_clock()?, next_clock()?, next_clock()?);
+    if clock_parts.next().is_some() {
+        return None;
+    }
+    let clock = time::Time::from_hms(hour, minute, second).ok()?;
+    let timestamp = time::PrimitiveDateTime::new(date, clock)
+        .assume_utc()
+        .unix_timestamp();
+    if timestamp >= 0 {
+        UNIX_EPOCH.checked_add(Duration::from_secs(timestamp as u64))
+    } else {
+        UNIX_EPOCH.checked_sub(Duration::from_secs(timestamp.unsigned_abs()))
+    }
+}
+
+fn parse_year(value: &str) -> Option<i32> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.parse().ok()
+}
+
+fn is_weekday_name(value: &str) -> bool {
+    const DAYS: [&str; 7] = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+    DAYS.iter()
+        .any(|day| value == *day || (value.len() == 3 && day.starts_with(value)))
+}
+
+fn month_number(value: &str) -> Option<u8> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    MONTHS
+        .iter()
+        .position(|month| *month == value)
+        .map(|index| index as u8 + 1)
 }
 
 const fn is_zero(value: &u32) -> bool {
