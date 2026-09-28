@@ -53,10 +53,7 @@ fn oauth2_client_credentials_inject_optional_keys() {
         .with_field("app_id", "client_id")
         .with_request_target("get", "api.example.com", "/v1/devices")
         .spec();
-    assert!(
-        duplicate.is_err(),
-        "duplicate client_id mapping must fail: {duplicate:?}"
-    );
+    assert!(duplicate.is_err(), "duplicate client_id mapping must fail");
 
     let spec = OAuth2ClientCredentialsInject::new("auth.example.com", 8443, "/token")
         .with_request_target("get", "api.example.com", "/v1/devices")
