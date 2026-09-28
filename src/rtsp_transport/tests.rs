@@ -297,8 +297,7 @@ fn ipv6_literal_dials_without_brackets_and_keeps_them_in_urls() {
         dialed: Arc::clone(&dialed),
     }));
 
-    let live =
-        RtspEndpoint::parse(&format!("rtsp://[::1]:{port}/live"), "", "").expect("endpoint");
+    let live = RtspEndpoint::parse(&format!("rtsp://[::1]:{port}/live"), "", "").expect("endpoint");
     assert_eq!(live.host, "::1");
     assert_eq!(live.base_url, format!("rtsp://[::1]:{port}"));
     assert_eq!(live.authority(), format!("[::1]:{port}"));
@@ -317,7 +316,10 @@ fn ipv6_literal_dials_without_brackets_and_keeps_them_in_urls() {
         &[("::1".to_string(), u32::from(port))]
     );
     let request = server.join().expect("server thread");
-    assert!(request.starts_with("OPTIONS /live RTSP/1.0\r\n"), "{request}");
+    assert!(
+        request.starts_with("OPTIONS /live RTSP/1.0\r\n"),
+        "{request}"
+    );
 }
 
 #[cfg(not(feature = "rtsps"))]
@@ -352,8 +354,7 @@ fn rtsps_without_the_feature_fails_instead_of_sending_plaintext() {
     }));
 
     let endpoint =
-        RtspEndpoint::parse(&format!("rtsps://127.0.0.1:{port}/stream"), "", "")
-            .expect("endpoint");
+        RtspEndpoint::parse(&format!("rtsps://127.0.0.1:{port}/stream"), "", "").expect("endpoint");
     let err = dial_rtsp_transport(&endpoint, Duration::from_secs(2), false)
         .expect_err("rtsps needs the feature");
     assert!(err.to_string().contains("rtsps"), "{err}");
