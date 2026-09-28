@@ -20,8 +20,11 @@ pub struct RtspEndpoint {
 }
 
 impl RtspEndpoint {
-    pub fn parse(raw_url: &str, username: &str, password: &str) -> SdkResult<Self> {
-        parse_rtsp_endpoint(raw_url, username, password)
+    /// Parses an RTSP or RTSPS URL. `username` and `default_password` are used
+    /// only when the URL carries no userinfo, matching the Go SDK's override
+    /// parameters.
+    pub fn parse(raw_url: &str, username: &str, default_password: &str) -> SdkResult<Self> {
+        parse_rtsp_endpoint(raw_url, username, default_password)
     }
 
     pub fn authority(&self) -> String {
@@ -301,7 +304,7 @@ where
 pub fn parse_rtsp_endpoint(
     raw_url: &str,
     username: &str,
-    password: &str,
+    default_password: &str,
 ) -> SdkResult<RtspEndpoint> {
     let parsed = Url::parse(raw_url.trim()).map_err(|_| Error::RtspInvalidUrl)?;
     let scheme = parsed.scheme().trim().to_ascii_lowercase();
@@ -324,7 +327,7 @@ pub fn parse_rtsp_endpoint(
     };
 
     let mut username = username.to_string();
-    let mut password = password.to_string();
+    let mut password = default_password.to_string();
     if !parsed.username().is_empty() {
         username = parsed.username().to_string();
     }

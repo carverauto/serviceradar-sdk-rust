@@ -379,7 +379,6 @@ mod rtsps {
     use std::thread;
     use std::time::Duration;
 
-    use rustls::pki_types::pem::PemObject;
     use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
     use crate::host::{TestHostBackend, install_test_backend};
@@ -387,8 +386,17 @@ mod rtsps {
 
     use super::super::{RtspConnection, dial_rtsp_transport};
 
-    const CERT: &[u8] = include_bytes!("../../testdata/rtsps/server.cert.pem");
-    const KEY: &[u8] = include_bytes!("../../testdata/rtsps/server.key.pem");
+    /// Generates a fresh, throwaway self-signed certificate and private key for
+    /// the RTSPS test server. Key material is never stored on disk, so no
+    /// private key is committed to the repository.
+    fn test_cert_key() -> (CertificateDer<'static>, PrivateKeyDer<'static>) {
+        let rcgen::CertifiedKey { cert, signing_key } =
+            rcgen::generate_simple_self_signed(vec!["camera01.example.com".to_string()])
+                .expect("generate test certificate");
+        let cert = cert.der().clone();
+        let key = PrivateKeyDer::try_from(signing_key.serialize_der()).expect("test private key");
+        (cert, key)
+    }
 
     /// Bridges the SDK's host TCP calls to a real loopback socket.
     struct LoopbackHost {
@@ -432,8 +440,8 @@ mod rtsps {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let port = listener.local_addr().expect("addr").port();
         let handle = thread::spawn(move || {
-            let certs = vec![CertificateDer::from_pem_slice(CERT).expect("cert")];
-            let key = PrivateKeyDer::from_pem_slice(KEY).expect("key");
+            let (cert, key) = test_cert_key();
+            let certs = vec![cert];
             let config = rustls::ServerConfig::builder_with_provider(Arc::new(
                 rustls_rustcrypto::provider(),
             ))
