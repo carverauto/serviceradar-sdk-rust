@@ -25,7 +25,11 @@ impl RtspEndpoint {
     }
 
     pub fn authority(&self) -> String {
-        format!("{}:{}", self.host, self.port)
+        if self.host.contains(':') {
+            format!("[{}]:{}", self.host, self.port)
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
     }
 
     pub fn build_request(
@@ -301,11 +305,16 @@ pub fn parse_rtsp_endpoint(
 ) -> SdkResult<RtspEndpoint> {
     let parsed = Url::parse(raw_url.trim()).map_err(|_| Error::RtspInvalidUrl)?;
     let scheme = parsed.scheme().trim().to_ascii_lowercase();
-    if parsed.host_str().unwrap_or_default().is_empty() || (scheme != "rtsp" && scheme != "rtsps") {
+    let display_host = parsed.host_str().unwrap_or_default();
+    let host = display_host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(display_host);
+    if host.is_empty() || (scheme != "rtsp" && scheme != "rtsps") {
         return Err(Error::RtspInvalidUrl);
     }
 
-    let host = parsed.host_str().unwrap_or_default().to_string();
+    let host = host.to_string();
     let port = if let Some(port) = parsed.port() {
         port
     } else if scheme == "rtsps" {
@@ -333,8 +342,8 @@ pub fn parse_rtsp_endpoint(
     };
 
     let authority = match parsed.port() {
-        Some(port) => format!("{host}:{port}"),
-        None => host.clone(),
+        Some(port) => format!("{display_host}:{port}"),
+        None => display_host.to_string(),
     };
 
     Ok(RtspEndpoint {

@@ -164,6 +164,42 @@ fn plain_write_does_not_call_the_host_after_the_deadline() {
     assert_eq!(timeouts.lock().expect("timeouts").len(), 1);
 }
 
+#[test]
+fn ipv6_literal_dials_without_brackets_and_keeps_them_in_urls() {
+    let wire = Arc::new(Mutex::new(Wire::default()));
+    let _guard = install_test_backend(Box::new(PlainRtspHost {
+        wire: Arc::clone(&wire),
+        reply: Vec::new(),
+    }));
+
+    let endpoint =
+        RtspEndpoint::parse("rtsp://[2001:db8::10]:8554/live", "", "").expect("endpoint");
+    assert_eq!(endpoint.host, "2001:db8::10");
+    assert_eq!(endpoint.port, 8554);
+    assert_eq!(endpoint.base_url, "rtsp://[2001:db8::10]:8554");
+    assert_eq!(endpoint.authority(), "[2001:db8::10]:8554");
+    assert_eq!(
+        endpoint.resolve_control_url("trackID=1"),
+        "rtsp://[2001:db8::10]:8554/live/trackID=1"
+    );
+
+    let conn = dial_rtsp_transport(&endpoint, Duration::from_secs(2), false).expect("dial");
+    drop(conn);
+    assert_eq!(
+        wire.lock().expect("wire").dialed,
+        vec![("2001:db8::10".to_string(), 8554)]
+    );
+
+    let implicit = RtspEndpoint::parse("rtsps://[2001:db8::10]/stream", "", "").expect("endpoint");
+    assert_eq!(implicit.host, "2001:db8::10");
+    assert_eq!(implicit.port, 322);
+    assert_eq!(implicit.base_url, "rtsps://[2001:db8::10]");
+    assert_eq!(
+        format!("{}{}", implicit.base_url, implicit.request_uri),
+        "rtsps://[2001:db8::10]/stream"
+    );
+}
+
 #[cfg(not(feature = "rtsps"))]
 #[test]
 fn rtsps_without_the_feature_fails_instead_of_sending_plaintext() {
