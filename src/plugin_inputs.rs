@@ -58,8 +58,14 @@ pub struct CredentialBrokerGrant {
     pub credential_secret_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_type: Option<String>,
+    /// Host-side injection spec. Read it with
+    /// [`CredentialBrokerGrant::inject_type`] / [`CredentialBrokerGrant::inject_spec`]
+    /// and write it with a typed builder such as
+    /// [`crate::OAuth2ClientCredentialsInject`].
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub inject: BTreeMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub allow: Option<crate::CredentialBrokerAllow>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

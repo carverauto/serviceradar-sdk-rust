@@ -35,6 +35,7 @@ const ALLOWED_CAPABILITIES: &[&str] = &[
     "submit_result",
     "emit_telemetry",
     "http_request",
+    crate::grpc::CAPABILITY_GRPC_REQUEST,
     "websocket_connect",
     "websocket_send",
     "websocket_recv",

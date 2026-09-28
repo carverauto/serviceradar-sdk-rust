@@ -19,6 +19,9 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - Advisory-feed contract builders and gateway-mediated artifact staging helpers
 - First-class metric telemetry helpers for canonical `serviceradar.metric.v1` payloads
 - Run overrides that let an action leave time-bounded state for later scheduled runs, and `emit_ocsf_event` for OCSF events from any entrypoint
+- Host-proxied unary gRPC calls
+- HTTP response headers (envelope mode) with `Retry-After` parsing
+- Typed credential broker grants, including OAuth2 client-credentials injection
 - Example plugins for HTTP, TCP, UDP, RTSP, widgets, WASI clock, and northbound actions
 
 The Go SDK in `/Users/mfreeman/src/serviceradar-sdk-go` remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
@@ -168,6 +171,81 @@ sdk::emit_telemetry(
 encoder so wasm plugins do not need to link a full protobuf runtime. If a plugin
 already has encoded protobuf bytes from another generator, use
 `TelemetryRecord::serviceradar_metrics`.
+
+## HTTP response headers
+
+The default response mode, `HTTP_RESPONSE_MODE_STATUS_BODY`, returns only the
+status and body. Set `HTTP_RESPONSE_MODE_ENVELOPE` to also receive the response
+headers; the host joins repeated values with commas.
+
+```rust
+let response = sdk::HTTP.do_request(
+    sdk::HttpRequest::get("https://api.example.com/v1/devices")
+        .with_response_mode(sdk::HTTP_RESPONSE_MODE_ENVELOPE),
+)?;
+if response.status == 429 {
+    if let Some(wait) = response.retry_after() { // delta-seconds or HTTP-date
+        return Ok(sdk::PluginResult::warning(format!("rate limited, retry in {wait:?}")));
+    }
+}
+let content_type = response.header("content-type"); // case-insensitive
+```
+
+## Unary gRPC
+
+`sdk::GRPC.unary` makes one unary call through the host's `grpc_unary` import.
+The message is the serialized request protobuf, so the SDK carries no protobuf
+runtime; encode and decode with whatever generator suits the plugin.
+
+```rust
+let request = sdk::GrpcRequest::new("device.example.com", 9200, "/example.v1.Device/Handle")
+    .with_metadata("x-request-id", "req-0001")
+    .with_message(request_bytes)
+    .with_timeout(std::time::Duration::from_secs(5))
+    .with_transport(sdk::GRPC_TRANSPORT_TLS); // default; GRPC_TRANSPORT_H2C for cleartext
+
+match sdk::GRPC.unary(request) {
+    Ok(response) => { /* decode response.message */ }
+    // Completed with a non-OK status; headers and trailers are on the error.
+    Err(sdk::Error::GrpcStatus(status)) => {
+        return Ok(sdk::PluginResult::critical(format!("rpc failed: {}", status.code)));
+    }
+    Err(err) => return Err(err), // host policy error (sdk::Error::Host)
+}
+```
+
+`GrpcClient::call` returns every completed RPC as `Ok`, non-OK statuses
+included, for callers that inspect `GrpcResponse::status` themselves.
+
+The manifest must declare the `grpc_request` capability
+(`sdk::CAPABILITY_GRPC_REQUEST`). The host checks the destination against
+`allowed_domains`, `allowed_networks` and `allowed_ports` before dialing,
+allows `h2c` only inside `allowed_networks`, caps responses at 4 MiB, and
+rejects reserved and `grpc-*` metadata keys. Dial failures arrive as status
+`UNAVAILABLE`.
+
+## Credential broker grants
+
+Target contexts carry credential broker grants; the host injects the
+credential into matching outbound requests, so the plugin never reads the
+secret. The `sdk::CREDENTIAL_INJECT_*` constants name the accepted inject
+types, and `CredentialBrokerGrant::allow` carries the request scope a grant
+covers. `OAuth2ClientCredentialsInject` builds an `oauth2_client_credentials`
+spec with the exact keys the host reads:
+
+```rust
+let inject = sdk::OAuth2ClientCredentialsInject::new("auth.example.com", 443, "/oauth2/token")
+    .with_scope("devices.read")
+    .inject()?;
+// {"type":"oauth2_client_credentials","token_method":"POST","token_host":"auth.example.com",
+//  "token_port":"443","token_path":"/oauth2/token","field_client_id":"client_id",
+//  "field_client_secret":"client_secret","fixed_grant_type":"client_credentials",
+//  "fixed_scope":"devices.read"}
+```
+
+`field_<credential field>` maps a stored credential field to a token form
+field; `fixed_<form field>` sends a literal value. See
+`fixtures/credential_grant_oauth2_client_credentials.json` for a full grant.
 
 ## Plugin Manifest
 
@@ -326,10 +404,43 @@ let (capture, result) = run_local_host(
     LocalHostOptions {
         config_json: runtime_config,
         http_handler: Some(new_local_broker(credentials)),
+        ..LocalHostOptions::default()
     },
     run_plugin,
 );
 result?;
+```
+
+Pass `grpc_handler` to serve `grpc_unary` calls the same way; without one, gRPC
+calls fail with host error `-4`. The handler is synchronous, so it emulates a
+timeout by returning `Error::Host` with code `-6` (the local host also reports
+`-6` when a failing handler ran past `timeout_ms`); any other handler error
+reaches the plugin as status `UNAVAILABLE` with its text withheld.
+
+The local host emulates `oauth2_client_credentials` grants itself. Pass the
+grants and the credentials, and a request inside a grant's allow scope reaches
+your HTTP handler with `Authorization: Bearer <local_oauth2_bearer_token(grant)>`,
+a synthetic token derived from the grant identity only and identical to the Go
+SDK's. A covered request the grant cannot authorize (missing credential field,
+outside the inject target, insecure TLS without opt-in) is denied with `-2`, as
+on the agent:
+
+```dotenv
+SERVICERADAR_CREDENTIAL_CLIENT_ID=local-client
+SERVICERADAR_CREDENTIAL_CLIENT_SECRET=local-client-secret
+```
+
+```rust
+let (capture, result) = run_local_host(
+    LocalHostOptions {
+        config_json: runtime_config,
+        http_handler: Some(new_local_broker()),
+        credential_grants: target.credential_grants().to_vec(),
+        credentials: inputs.credentials(),
+        ..LocalHostOptions::default()
+    },
+    run_plugin,
+);
 ```
 
 The caller-supplied HTTP handler is the trusted local host adapter and should

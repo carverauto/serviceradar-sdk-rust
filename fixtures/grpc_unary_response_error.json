@@ -1,0 +1,15 @@
+{
+  "grpc_status": 5,
+  "grpc_message": "device dev-01 not found",
+  "headers": {
+    "content-type": [
+      "application/grpc"
+    ]
+  },
+  "trailers": {
+    "x-error-detail": [
+      "unknown-device"
+    ]
+  },
+  "message_base64": ""
+}

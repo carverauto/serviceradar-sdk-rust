@@ -1,0 +1,15 @@
+{
+  "grpc_status": 0,
+  "grpc_message": "",
+  "headers": {
+    "content-type": [
+      "application/grpc"
+    ]
+  },
+  "trailers": {
+    "x-handled-by": [
+      "handler-1"
+    ]
+  },
+  "message_base64": "CgJvaw=="
+}

@@ -123,3 +123,82 @@ fn explicit_response_mode_is_sent_verbatim() {
     );
     assert_eq!(payload.response_mode, "json");
 }
+
+#[test]
+fn http_response_header_is_case_insensitive() {
+    let response = HttpResponse {
+        headers: BTreeMap::from([
+            ("Content-Type".to_string(), "application/json".to_string()),
+            ("X-Rate-Limit".to_string(), "10".to_string()),
+        ]),
+        ..HttpResponse::default()
+    };
+    assert_eq!(response.header("content-type"), Some("application/json"));
+    assert_eq!(response.header("X-RATE-LIMIT"), Some("10"));
+    assert_eq!(response.header("missing"), None);
+}
+
+#[test]
+fn http_response_retry_after() {
+    use std::time::UNIX_EPOCH;
+
+    let now_utc = time::PrimitiveDateTime::new(
+        time::Date::from_calendar_date(2026, time::Month::January, 2).unwrap(),
+        time::Time::from_hms(3, 4, 5).unwrap(),
+    )
+    .assume_utc();
+    let now = UNIX_EPOCH + Duration::from_secs(now_utc.unix_timestamp() as u64);
+    let overflow = "9".repeat(20);
+    let beyond_go_duration = (i64::MAX as u64 / 1_000_000_000 + 1).to_string();
+    let cases = [
+        ("absent", "", None),
+        ("delta seconds", "120", Some(Duration::from_secs(120))),
+        ("zero", "0", Some(Duration::ZERO)),
+        (
+            "http date",
+            "Fri, 02 Jan 2026 03:05:35 GMT",
+            Some(Duration::from_secs(90)),
+        ),
+        (
+            "rfc850 date",
+            "Friday, 02-Jan-26 03:05:35 GMT",
+            Some(Duration::from_secs(90)),
+        ),
+        (
+            "asctime date",
+            "Fri Jan  2 03:05:35 2026",
+            Some(Duration::from_secs(90)),
+        ),
+        (
+            "past date",
+            "Thu, 01 Jan 2026 00:00:00 GMT",
+            Some(Duration::ZERO),
+        ),
+        ("negative", "-5", None),
+        ("fractional", "1.5", None),
+        ("malformed", "soon", None),
+        ("bad month", "Fri, 02 Foo 2026 03:05:35 GMT", None),
+        ("overflow", overflow.as_str(), None),
+        ("beyond go duration", beyond_go_duration.as_str(), None),
+    ];
+    for (name, value, want) in cases {
+        let mut response = HttpResponse::default();
+        if !value.is_empty() {
+            response
+                .headers
+                .insert("retry-after".to_string(), value.to_string());
+        }
+        assert_eq!(response.retry_after_at(now), want, "{name}");
+    }
+}
+
+#[test]
+fn envelope_response_mode_is_named() {
+    let payload = HttpRequestPayload::from_request(
+        HttpRequest::get("https://example.com")
+            .with_response_mode(super::HTTP_RESPONSE_MODE_ENVELOPE),
+    );
+    assert_eq!(payload.response_mode, "envelope");
+    let payload = HttpRequestPayload::from_request(HttpRequest::get("https://example.com"));
+    assert_eq!(payload.response_mode, super::HTTP_RESPONSE_MODE_STATUS_BODY);
+}

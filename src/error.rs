@@ -79,6 +79,12 @@ pub enum Error {
     CameraHostRequired,
     InvalidCameraScheme,
     InvalidPluginInputs(String),
+    /// A [`crate::GrpcRequest`] failed the shape checks the host applies.
+    InvalidGrpcRequest(&'static str),
+    /// A unary RPC completed with a non-OK gRPC status.
+    GrpcStatus(crate::GrpcStatusError),
+    /// A credential broker inject spec failed the host's validation.
+    InvalidCredentialInject(String),
     RtspInvalidUrl,
     RtspNoVideoTrack,
     RtspBadResponse,
@@ -108,6 +114,9 @@ impl Display for Error {
             Self::CameraHostRequired => f.write_str("host is required"),
             Self::InvalidCameraScheme => f.write_str("scheme must be http or https"),
             Self::InvalidPluginInputs(msg) => write!(f, "invalid plugin inputs payload: {msg}"),
+            Self::InvalidGrpcRequest(msg) => f.write_str(msg),
+            Self::GrpcStatus(err) => Display::fmt(err, f),
+            Self::InvalidCredentialInject(msg) => f.write_str(msg),
             Self::RtspInvalidUrl => f.write_str("invalid rtsp source url"),
             Self::RtspNoVideoTrack => f.write_str("no h264 video track in sdp"),
             Self::RtspBadResponse => f.write_str("invalid rtsp response"),
@@ -126,6 +135,12 @@ impl std::error::Error for Error {}
 impl From<HostError> for Error {
     fn from(value: HostError) -> Self {
         Self::Host(value)
+    }
+}
+
+impl From<crate::GrpcStatusError> for Error {
+    fn from(value: crate::GrpcStatusError) -> Self {
+        Self::GrpcStatus(value)
     }
 }
 
