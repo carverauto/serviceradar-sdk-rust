@@ -55,6 +55,7 @@ Planned capability areas, based on the Go SDK layout:
   - `udp_sendto`
   - `websocket_connect`, `websocket_send`, `websocket_recv`, `websocket_close`
   - `camera_media_open`, `camera_media_write`, `camera_media_heartbeat`, `camera_media_close`
+  - `grpc_unary`
 - Follow the Go SDK's pattern of providing native-test stubs for non-WASM builds so most logic can be validated without a real host runtime.
 - Keep example plugins as first-class compatibility checks. Each major capability should have a minimal example that exercises the intended public API and can be compiled to WASM.
 
