@@ -553,6 +553,6 @@ Crate publishing is automated in GitHub Actions. To publish a release:
 
 1. Update `version` in `Cargo.toml`.
 2. Push the commit to `main`.
-3. Create and push a matching tag such as `v0.1.5`.
+3. Create and push a matching tag such as `v0.2.0`.
 
 The publish workflow runs `cargo publish --locked`. Configure the GitHub repository secret `CARGO_REGISTRY_TOKEN` with a crates.io API token before using the release workflow.
