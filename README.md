@@ -504,6 +504,42 @@ The config and action-result wire shapes are pinned by
 `fixtures/plugin_run_overrides_config.json` and
 `fixtures/northbound_action_result_run_overrides.json`.
 
+## Camera stream addresses
+
+A camera stream address is a secret: an RTSP path alias works as a bearer
+token, and other addresses carry credentials. ServiceRadar does not store it.
+When a stream opens, the agent runs the camera inventory plugin that discovered
+the camera with a resolution request in its config, and hands the address the
+plugin returns to its stream reader. The entrypoint checks for the request
+first:
+
+```rust
+use serviceradar_sdk_rust::{
+    CameraSourceFailure, CameraSourceResolution, camera_source_resolution_requested,
+};
+
+if let Some(request) = camera_source_resolution_requested()? {
+    let resolution = match lookup_stream_url(&request.vendor_camera_id, &request.vendor_profile_id) {
+        Some(url) => CameraSourceResolution::Url(url),
+        None => CameraSourceResolution::Failure {
+            class: CameraSourceFailure::NotFound,
+            detail: "streaming is disabled for this camera".to_string(),
+        },
+    };
+    return resolution.submit();
+}
+```
+
+A resolver uses the assignment's own config and credentials, never creates or
+enables a stream on the camera or controller, and never logs the address. The
+failure detail is shown to operators, so keep the address and credentials out
+of it.
+
+Inventory runs ask the host whether to report addresses at all with
+`omit_camera_stream_addresses()`. When it returns true, report each profile's
+origin (scheme, host and port) and no stream URL, path or alias. When it
+returns false, report addresses as before.
+
 ## Device Discovery
 
 Plugins can emit `serviceradar.device_discovery.v1` envelopes inside the normal

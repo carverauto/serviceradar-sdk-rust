@@ -5,6 +5,7 @@ mod camera_http;
 mod camera_media;
 mod camera_plugin;
 mod camera_relay;
+mod camera_source_resolution;
 mod check_descriptor;
 mod config;
 #[cfg(test)]
@@ -55,6 +56,14 @@ pub use camera_plugin::{
     default_camera_streaming_config, load_camera_plugin_config, load_camera_streaming_config,
 };
 pub use camera_relay::{CameraRelayConfig, with_url_user_info};
+pub use camera_source_resolution::{
+    CAMERA_SOURCE_RESOLUTION_REQUEST_CONFIG_KEY, CAMERA_SOURCE_RESOLUTION_REQUEST_SCHEMA_V1,
+    CAMERA_SOURCE_RESOLUTION_SCHEMA_V1, CAMERA_STREAM_ADDRESSES_CONFIG_KEY,
+    CAMERA_STREAM_ADDRESSES_OMIT, CameraSourceFailure, CameraSourceResolution,
+    CameraSourceResolutionRequest, camera_source_resolution_requested,
+    omit_camera_stream_addresses, parse_camera_source_resolution_request,
+    parse_omit_camera_stream_addresses,
+};
 pub use check_descriptor::{
     CheckDescriptor, RESULT_SCHEMA_TARGET_CHECK_V1, TARGET_KIND_DEVICE, TARGET_KIND_SERVICE,
 };
