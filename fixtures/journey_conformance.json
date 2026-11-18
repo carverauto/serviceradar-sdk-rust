@@ -766,6 +766,83 @@
           "synthetic.step.transfer_ms"
         ]
       }
+    },
+    {
+      "name": "json_pointer_numeric_coercion_in_containers",
+      "journey_name": "json-pointer-numeric-coercion",
+      "steps": [
+        {
+          "name": "root-object-num-coercion",
+          "method": "GET",
+          "url": "https://app.example.com/num-root",
+          "expect_status": [200],
+          "expect_json_field": {
+            "pointer": "",
+            "value": {
+              "count": 1.0,
+              "arr": [2.0]
+            }
+          },
+          "mock_response": {
+            "status": 200,
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": "{\"count\":1,\"arr\":[2]}",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://app.example.com/num-root",
+              "protocol": "HTTP/2.0"
+            }
+          }
+        },
+        {
+          "name": "nested-array-num-coercion",
+          "method": "GET",
+          "url": "https://app.example.com/num-arr",
+          "expect_status": [200],
+          "expect_json_field": {
+            "pointer": "/arr",
+            "value": [2.0]
+          },
+          "mock_response": {
+            "status": 200,
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": "{\"count\":1,\"arr\":[2]}",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://app.example.com/num-arr",
+              "protocol": "HTTP/2.0"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "OK",
+        "http_calls": 2,
+        "steps_completed": 2,
+        "step_statuses": ["OK", "OK"],
+        "alert_hint": false,
+        "journey_available": 1,
+        "forbidden_substrings": [],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms"
+        ]
+      }
     }
   ]
 }

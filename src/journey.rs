@@ -1362,6 +1362,17 @@ fn json_values_equal(actual: &Value, expected: &Value) -> bool {
                 false
             }
         }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(k, av)| b.get(k).is_some_and(|bv| json_values_equal(av, bv)))
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b.iter())
+                    .all(|(av, bv)| json_values_equal(av, bv))
+        }
         _ => false,
     }
 }
@@ -1705,6 +1716,118 @@ mod tests {
             || {
                 let report = journey.execute()?;
                 assert_eq!(report.status, Status::Ok);
+                Ok(())
+            },
+        );
+        res.unwrap();
+    }
+
+    #[test]
+    fn journey_json_values_equal_numeric_coercion_and_null_vs_missing_keys() {
+        assert!(json_values_equal(
+            &serde_json::json!(1),
+            &serde_json::json!(1.0)
+        ));
+        assert!(json_values_equal(
+            &serde_json::json!({"count": 1, "arr": [2, {"inner": 3}]}),
+            &serde_json::json!({"count": 1.0, "arr": [2.0, {"inner": 3.0}]})
+        ));
+        assert!(!json_values_equal(
+            &serde_json::json!({"a": null}),
+            &serde_json::json!({})
+        ));
+        assert!(!json_values_equal(
+            &serde_json::json!({"a": null}),
+            &serde_json::json!({"b": null})
+        ));
+        assert!(!json_values_equal(
+            &serde_json::json!({"a": 1}),
+            &serde_json::json!({"a": 1, "b": null})
+        ));
+        assert!(json_values_equal(
+            &serde_json::json!({"a": null, "count": 1}),
+            &serde_json::json!({"a": null, "count": 1.0})
+        ));
+        assert!(!json_values_equal(
+            &serde_json::json!([1, 2]),
+            &serde_json::json!([2, 1])
+        ));
+
+        let journey = Journey::new("nested-num-coercion").with_step(
+            JourneyStep::get("step1", "https://app.example.com/num")
+                .expect_status_code(200)
+                .expect_json_field("", serde_json::json!({"count": 1.0, "arr": [2.0]}))
+                .expect_json_field("/arr", serde_json::json!([2.0])),
+        );
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        headers: BTreeMap::from([(
+                            "Content-Type".to_string(),
+                            "application/json".to_string(),
+                        )]),
+                        body: br#"{"count":1,"arr":[2]}"#.to_vec(),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Ok);
+                Ok(())
+            },
+        );
+        res.unwrap();
+
+        let top_level_journey = Journey::new("top-level-num-coercion").with_step(
+            JourneyStep::get("step1", "https://app.example.com/scalar")
+                .expect_status_code(200)
+                .expect_json_field("", serde_json::json!(1.0)),
+        );
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"1".to_vec(),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = top_level_journey.execute()?;
+                assert_eq!(report.status, Status::Ok);
+                Ok(())
+            },
+        );
+        res.unwrap();
+
+        let null_missing_journey = Journey::new("null-missing-key").with_step(
+            JourneyStep::get("step1", "https://app.example.com/null-check")
+                .expect_status_code(200)
+                .expect_json_field("", serde_json::json!({"a": null})),
+        );
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"{}".to_vec(),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = null_missing_journey.execute()?;
+                assert_eq!(report.status, Status::Critical);
                 Ok(())
             },
         );
