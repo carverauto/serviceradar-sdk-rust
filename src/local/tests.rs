@@ -589,4 +589,77 @@ mod credential_grants {
         assert!(status_body.headers.is_empty());
         assert_eq!(status_body.body, b"{}");
     }
+
+    #[test]
+    fn local_host_round_trips_follow_redirects_cookies_trace_and_tls() {
+        use crate::{HttpHopTrace, HttpTlsInfo, HttpTrace};
+
+        let seen_follow = Arc::new(Mutex::new(None));
+        let seen_follow_clone = Arc::clone(&seen_follow);
+        let mut got_resp = None;
+
+        let (_capture, result) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(move |request| {
+                    *seen_follow_clone.lock().unwrap() = request.follow_redirects;
+                    Ok(HttpResponse {
+                        status: 302,
+                        headers: BTreeMap::from([("Location".to_string(), "/next".to_string())]),
+                        set_cookies: vec![
+                            "sid=abc; Path=/; Secure".to_string(),
+                            "csrf=def; Path=/".to_string(),
+                        ],
+                        body: br#"{"ok":true}"#.to_vec(),
+                        trace: Some(HttpTrace {
+                            dns_duration_ns: 1000,
+                            connect_duration_ns: 2000,
+                            tls_handshake_duration_ns: 3000,
+                            ttfb_duration_ns: 4000,
+                            transfer_duration_ns: 500,
+                            total_duration_ns: 10500,
+                            connection_reused: false,
+                            redirect_count: 0,
+                            final_url: "https://sso.example.com/login".to_string(),
+                            protocol: "HTTP/2.0".to_string(),
+                            remote_addr: "192.0.2.10:443".to_string(),
+                            hops: vec![HttpHopTrace {
+                                url: "https://sso.example.com/login".to_string(),
+                                status: 302,
+                                ttfb_duration_ns: 4000,
+                                ..HttpHopTrace::default()
+                            }],
+                        }),
+                        tls: Some(HttpTlsInfo {
+                            version: "TLS1.3".to_string(),
+                            cipher_suite: "TLS_AES_128_GCM_SHA256".to_string(),
+                            alpn: "h2".to_string(),
+                            leaf_subject_cn: "sso.example.com".to_string(),
+                            leaf_issuer_cn: "Test CA".to_string(),
+                            leaf_not_after_unix: 1_790_553_600,
+                            leaf_days_remaining: 0,
+                        }),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                got_resp = Some(
+                    HTTP.do_request(
+                        HttpRequest::post("https://sso.example.com/login", Vec::new())
+                            .with_response_mode(HTTP_RESPONSE_MODE_ENVELOPE)
+                            .with_follow_redirects(false),
+                    )?,
+                );
+                Ok(())
+            },
+        );
+        result.unwrap();
+        assert_eq!(*seen_follow.lock().unwrap(), Some(false));
+        let resp = got_resp.unwrap();
+        assert_eq!(resp.set_cookies.len(), 2);
+        assert_eq!(resp.trace.as_ref().unwrap().total_duration_ns, 10500);
+        assert_eq!(resp.tls.as_ref().unwrap().leaf_days_remaining, 0);
+    }
 }

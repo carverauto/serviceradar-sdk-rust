@@ -3,7 +3,7 @@ use std::str;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 
 use crate::error::{HOST_ERR_TOO_LARGE, HostError, SdkResult};
 use crate::host;
@@ -32,6 +32,7 @@ pub struct HttpRequest {
     pub response_mode: String,
     pub timeout_ms: u32,
     pub insecure_skip_verify: bool,
+    pub follow_redirects: Option<bool>,
 }
 
 impl HttpRequest {
@@ -85,16 +86,138 @@ impl HttpRequest {
         self.body_base64 = false;
         self
     }
+
+    pub fn with_follow_redirects(mut self, follow: bool) -> Self {
+        self.follow_redirects = Some(follow);
+        self
+    }
 }
 
-/// Proxied response data. `headers` is populated only in
-/// [`HTTP_RESPONSE_MODE_ENVELOPE`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HttpHopTrace {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub status: i32,
+    #[serde(default)]
+    pub dns_duration_ns: u64,
+    #[serde(default)]
+    pub connect_duration_ns: u64,
+    #[serde(default)]
+    pub tls_handshake_duration_ns: u64,
+    #[serde(default)]
+    pub ttfb_duration_ns: u64,
+    #[serde(default)]
+    pub remote_addr: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HttpTrace {
+    #[serde(default)]
+    pub dns_duration_ns: u64,
+    #[serde(default)]
+    pub connect_duration_ns: u64,
+    #[serde(default)]
+    pub tls_handshake_duration_ns: u64,
+    #[serde(default)]
+    pub ttfb_duration_ns: u64,
+    #[serde(default)]
+    pub transfer_duration_ns: u64,
+    #[serde(default)]
+    pub total_duration_ns: u64,
+    #[serde(default)]
+    pub connection_reused: bool,
+    #[serde(default)]
+    pub redirect_count: u32,
+    #[serde(default)]
+    pub final_url: String,
+    #[serde(default)]
+    pub protocol: String,
+    #[serde(default)]
+    pub remote_addr: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub hops: Vec<HttpHopTrace>,
+}
+
+impl HttpTrace {
+    pub fn dns_duration(&self) -> Duration {
+        Duration::from_nanos(self.dns_duration_ns)
+    }
+
+    pub fn connect_duration(&self) -> Duration {
+        Duration::from_nanos(self.connect_duration_ns)
+    }
+
+    pub fn tls_handshake_duration(&self) -> Duration {
+        Duration::from_nanos(self.tls_handshake_duration_ns)
+    }
+
+    pub fn ttfb_duration(&self) -> Duration {
+        Duration::from_nanos(self.ttfb_duration_ns)
+    }
+
+    pub fn transfer_duration(&self) -> Duration {
+        Duration::from_nanos(self.transfer_duration_ns)
+    }
+
+    pub fn total_duration(&self) -> Duration {
+        Duration::from_nanos(self.total_duration_ns)
+    }
+
+    pub fn dns_ms(&self) -> f64 {
+        self.dns_duration_ns as f64 / 1_000_000.0
+    }
+
+    pub fn connect_ms(&self) -> f64 {
+        self.connect_duration_ns as f64 / 1_000_000.0
+    }
+
+    pub fn tls_handshake_ms(&self) -> f64 {
+        self.tls_handshake_duration_ns as f64 / 1_000_000.0
+    }
+
+    pub fn ttfb_ms(&self) -> f64 {
+        self.ttfb_duration_ns as f64 / 1_000_000.0
+    }
+
+    pub fn transfer_ms(&self) -> f64 {
+        self.transfer_duration_ns as f64 / 1_000_000.0
+    }
+
+    pub fn total_ms(&self) -> f64 {
+        self.total_duration_ns as f64 / 1_000_000.0
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HttpTlsInfo {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub cipher_suite: String,
+    #[serde(default)]
+    pub alpn: String,
+    #[serde(default)]
+    pub leaf_subject_cn: String,
+    #[serde(default)]
+    pub leaf_issuer_cn: String,
+    #[serde(default)]
+    pub leaf_not_after_unix: i64,
+    #[serde(default)]
+    pub leaf_days_remaining: i64,
+}
+
+/// Proxied response data. `headers`, `set_cookies`, `trace`, and `tls` are
+/// populated only in [`HTTP_RESPONSE_MODE_ENVELOPE`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HttpResponse {
     pub status: i32,
     pub headers: BTreeMap<String, String>,
+    pub set_cookies: Vec<String>,
     pub body: Vec<u8>,
     pub duration: Duration,
+    pub trace: Option<HttpTrace>,
+    pub tls: Option<HttpTlsInfo>,
 }
 
 impl HttpResponse {
@@ -107,6 +230,19 @@ impl HttpResponse {
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
+    }
+
+    /// Returns all values for the named response header, matched
+    /// case-insensitively. For `Set-Cookie`, unjoined `set_cookies` are
+    /// returned when populated by the host envelope.
+    pub fn header_values(&self, name: &str) -> Vec<String> {
+        if name.eq_ignore_ascii_case("Set-Cookie") && !self.set_cookies.is_empty() {
+            return self.set_cookies.clone();
+        }
+        match self.header(name) {
+            Some(value) if !value.is_empty() => vec![value.to_string()],
+            _ => Vec::new(),
+        }
     }
 
     /// Parses the `Retry-After` header as delta-seconds or an HTTP-date. A date
@@ -232,6 +368,8 @@ struct HttpRequestPayload {
     timeout_ms: u32,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     insecure_skip_verify: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    follow_redirects: Option<bool>,
 }
 
 impl HttpRequestPayload {
@@ -255,6 +393,7 @@ impl HttpRequestPayload {
             },
             timeout_ms: request.timeout_ms,
             insecure_skip_verify: request.insecure_skip_verify,
+            follow_redirects: request.follow_redirects,
         };
 
         if !request.body.is_empty() {
@@ -270,13 +409,32 @@ impl HttpRequestPayload {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct HttpResponsePayload {
     status: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     headers: BTreeMap<String, String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    set_cookies: Vec<String>,
     #[serde(default)]
     body_base64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trace: Option<HttpTrace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tls: Option<HttpTlsInfo>,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Default + Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
 }
 
 /// Decodes a `status_body` reply: ASCII digits, a newline, then the raw body.
@@ -308,9 +466,9 @@ fn decode_status_body_response(
 
     Ok(Some(HttpResponse {
         status,
-        headers: BTreeMap::new(),
         body: payload[line_end + 1..].to_vec(),
         duration,
+        ..HttpResponse::default()
     }))
 }
 
@@ -327,15 +485,18 @@ fn decode_envelope_response(payload: &[u8], duration: Duration) -> SdkResult<Htt
     Ok(HttpResponse {
         status: payload.status,
         headers: payload.headers,
+        set_cookies: payload.set_cookies,
         body,
         duration,
+        trace: payload.trace,
+        tls: payload.tls,
     })
 }
 
 /// Parses the three HTTP-date forms of RFC 9110 section 5.6.7: IMF-fixdate
 /// (`Sun, 06 Nov 1994 08:49:37 GMT`), obsolete RFC 850
 /// (`Sunday, 06-Nov-94 08:49:37 GMT`) and asctime (`Sun Nov  6 08:49:37 1994`).
-fn parse_http_date(value: &str) -> Option<SystemTime> {
+pub(crate) fn parse_http_date(value: &str) -> Option<SystemTime> {
     let fields: Vec<&str> = value.split_ascii_whitespace().collect();
     let (weekday, day, month, year, clock) = match fields.as_slice() {
         [weekday, day, month, year, clock, "GMT"] => (

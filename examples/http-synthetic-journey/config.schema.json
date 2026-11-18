@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "login_url": {"type": "string", "format": "uri"},
+    "api_url": {"type": "string", "format": "uri"},
+    "warn_ms": {"type": "number", "minimum": 0},
+    "crit_ms": {"type": "number", "minimum": 0}
+  },
+  "required": ["login_url", "api_url"]
+}

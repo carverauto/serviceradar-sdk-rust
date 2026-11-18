@@ -1,0 +1,447 @@
+{
+  "schema": "serviceradar.journey_conformance.v1",
+  "now_unix": 1790510400,
+  "cookie_jar_vectors": [
+    {
+      "name": "host_only_vs_domain_path_and_secure",
+      "steps": [
+        {
+          "action": "store",
+          "url": "https://sso.example.com/auth/login",
+          "set_cookies": [
+            "sid=secret-sid-1; Path=/; HttpOnly; Secure",
+            "shared=secret-shared-2; Domain=example.com; Path=/app; Secure"
+          ]
+        },
+        {
+          "action": "query",
+          "url": "https://sso.example.com/auth/step2",
+          "want_header": "sid=secret-sid-1"
+        },
+        {
+          "action": "query",
+          "url": "https://app.example.com/app/dashboard",
+          "want_header": "shared=secret-shared-2"
+        },
+        {
+          "action": "query",
+          "url": "https://app.example.com/app",
+          "want_header": "shared=secret-shared-2"
+        },
+        {
+          "action": "query",
+          "url": "https://app.example.com/apiv2",
+          "want_header": ""
+        },
+        {
+          "action": "query",
+          "url": "http://app.example.com/app/dashboard",
+          "want_header": ""
+        },
+        {
+          "action": "query",
+          "url": "https://evil-example.com/app/dashboard",
+          "want_header": ""
+        }
+      ]
+    },
+    {
+      "name": "max_age_precedence_expires_and_cross_domain_reject",
+      "steps": [
+        {
+          "action": "store",
+          "url": "https://app.example.com/login",
+          "set_cookies": [
+            "session=old-secret; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT",
+            "pref=dark; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=3600",
+            "rfc850=v1; Path=/; Expires=Sunday, 06-Nov-33 08:49:37 GMT",
+            "cross=bad; Domain=other.com; Path=/",
+            "tld=bad; Domain=com; Path=/",
+            "expired=gone; Path=/; Expires=Wed, 01 Jan 2020 00:00:00 GMT"
+          ]
+        },
+        {
+          "action": "query",
+          "url": "https://app.example.com/home",
+          "want_header": "session=old-secret; pref=dark; rfc850=v1"
+        },
+        {
+          "action": "store",
+          "url": "https://app.example.com/logout",
+          "set_cookies": [
+            "session=ignored; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Max-Age=0"
+          ]
+        },
+        {
+          "action": "query",
+          "url": "https://app.example.com/home",
+          "want_header": "pref=dark; rfc850=v1"
+        }
+      ]
+    },
+    {
+      "name": "ip_literal_host_only_and_path_precedence",
+      "steps": [
+        {
+          "action": "store",
+          "url": "http://192.0.2.10/api/v1/auth",
+          "set_cookies": [
+            "ip_tok=val1; Path=/api",
+            "ip_sub=val2; Path=/api/v1",
+            "ip_bad_dom=bad; Domain=2.10; Path=/"
+          ]
+        },
+        {
+          "action": "query",
+          "url": "http://192.0.2.10/api/v1/items",
+          "want_header": "ip_sub=val2; ip_tok=val1"
+        }
+      ]
+    }
+  ],
+  "http_envelope_vectors": [
+    {
+      "name": "follow_redirects_false_and_zero_cert_days",
+      "request": {
+        "method": "POST",
+        "url": "https://sso.example.com/session",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"grant\":\"test\"}",
+        "response_mode": "envelope",
+        "timeout_ms": 2500,
+        "follow_redirects": false
+      },
+      "want_request_contains": [
+        "\"method\":\"POST\"",
+        "\"response_mode\":\"envelope\"",
+        "\"follow_redirects\":false"
+      ],
+      "response_json": {
+        "status": 302,
+        "headers": {
+          "Location": "/callback",
+          "Set-Cookie": "sid=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT, csrf=xyz; Expires=Thu, 22 Oct 2026 07:28:00 GMT"
+        },
+        "set_cookies": [
+          "sid=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/; Secure",
+          "csrf=xyz; Expires=Thu, 22 Oct 2026 07:28:00 GMT; Path=/; Secure"
+        ],
+        "body_base64": "eyJvayI6dHJ1ZX0=",
+        "body_encoding": "base64",
+        "trace": {
+          "dns_duration_ns": 1200000,
+          "connect_duration_ns": 3400000,
+          "tls_handshake_duration_ns": 5600000,
+          "ttfb_duration_ns": 8100000,
+          "transfer_duration_ns": 900000,
+          "total_duration_ns": 19200000,
+          "connection_reused": false,
+          "redirect_count": 0,
+          "final_url": "https://sso.example.com/session",
+          "protocol": "HTTP/2.0",
+          "remote_addr": "192.0.2.20:443",
+          "hops": [
+            {
+              "url": "https://sso.example.com/session",
+              "status": 302,
+              "dns_duration_ns": 1200000,
+              "connect_duration_ns": 3400000,
+              "tls_handshake_duration_ns": 5600000,
+              "ttfb_duration_ns": 8100000,
+              "remote_addr": "192.0.2.20:443"
+            }
+          ]
+        },
+        "tls": {
+          "version": "TLS1.3",
+          "cipher_suite": "TLS_AES_128_GCM_SHA256",
+          "alpn": "h2",
+          "leaf_subject_cn": "sso.example.com",
+          "leaf_issuer_cn": "Example CA",
+          "leaf_not_after_unix": 1790553600,
+          "leaf_days_remaining": 0
+        }
+      }
+    }
+  ],
+  "journey_scenarios": [
+    {
+      "name": "sso_api_success",
+      "journey_name": "sso-api-login",
+      "web_property_id": "wp-checkout-01",
+      "device_id": "dev-edge-01",
+      "target_ip": "192.0.2.50",
+      "steps": [
+        {
+          "name": "login",
+          "method": "POST",
+          "url": "https://sso.example.com/session?debug=1",
+          "follow_redirects": false,
+          "expect_status": [302],
+          "expect_header": {
+            "name": "Location",
+            "value": "https://app.example.com/app/dashboard"
+          },
+          "expect_min_cert_days": {
+            "warn": 14,
+            "crit": 3
+          },
+          "extract_cookie": {
+            "cookie": "sess",
+            "var": "session_tok"
+          },
+          "extract_json_field": {
+            "pointer": "/csrf",
+            "var": "csrf_tok"
+          },
+          "mock_response": {
+            "status": 302,
+            "headers": {
+              "Location": "https://app.example.com/app/dashboard"
+            },
+            "set_cookies": [
+              "sess=tok-secret-cookie; Domain=example.com; Path=/; Secure"
+            ],
+            "body": "{\"csrf\":\"csrf-secret-xyz\"}",
+            "trace": {
+              "dns_duration_ns": 1000000,
+              "connect_duration_ns": 2000000,
+              "tls_handshake_duration_ns": 4000000,
+              "ttfb_duration_ns": 7000000,
+              "transfer_duration_ns": 1000000,
+              "total_duration_ns": 15000000,
+              "connection_reused": false,
+              "redirect_count": 0,
+              "final_url": "https://sso.example.com/session",
+              "protocol": "HTTP/2.0",
+              "remote_addr": "192.0.2.20:443"
+            },
+            "tls": {
+              "version": "TLS1.3",
+              "cipher_suite": "TLS_AES_128_GCM_SHA256",
+              "alpn": "h2",
+              "leaf_subject_cn": "sso.example.com",
+              "leaf_issuer_cn": "Example CA",
+              "leaf_not_after_unix": 1794139200,
+              "leaf_days_remaining": 42
+            }
+          }
+        },
+        {
+          "name": "api-me",
+          "method": "GET",
+          "url": "https://app.example.com/app/me",
+          "headers": {
+            "X-CSRF": "{{csrf_tok}}"
+          },
+          "expect_status": [200],
+          "expect_body_contains": "admin",
+          "expect_json_field": {
+            "pointer": "/user/role",
+            "value": "admin"
+          },
+          "expected_request_headers": {
+            "Cookie": "sess=tok-secret-cookie",
+            "X-CSRF": "csrf-secret-xyz"
+          },
+          "mock_response": {
+            "status": 200,
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": "{\"user\":{\"role\":\"admin\"}}",
+            "trace": {
+              "dns_duration_ns": 0,
+              "connect_duration_ns": 0,
+              "tls_handshake_duration_ns": 0,
+              "ttfb_duration_ns": 6000000,
+              "transfer_duration_ns": 2000000,
+              "total_duration_ns": 8000000,
+              "connection_reused": true,
+              "redirect_count": 0,
+              "final_url": "https://app.example.com/app/me",
+              "protocol": "HTTP/2.0",
+              "remote_addr": "192.0.2.21:443"
+            },
+            "tls": {
+              "version": "TLS1.3",
+              "cipher_suite": "TLS_AES_128_GCM_SHA256",
+              "alpn": "h2",
+              "leaf_subject_cn": "app.example.com",
+              "leaf_issuer_cn": "Example CA",
+              "leaf_not_after_unix": 1794139200,
+              "leaf_days_remaining": 42
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "OK",
+        "http_calls": 2,
+        "steps_completed": 2,
+        "step_statuses": ["OK", "OK"],
+        "alert_hint": false,
+        "journey_available": 1,
+        "forbidden_substrings": [
+          "tok-secret-cookie",
+          "csrf-secret-xyz",
+          "debug=1"
+        ],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms",
+          "synthetic.step.tls_cert_days_remaining"
+        ]
+      }
+    },
+    {
+      "name": "step2_failure_short_circuits",
+      "journey_name": "checkout-short-circuit",
+      "steps": [
+        {
+          "name": "landing",
+          "method": "GET",
+          "url": "https://app.example.com/",
+          "expect_status": [200],
+          "mock_response": {
+            "status": 200,
+            "body": "ok",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://app.example.com/",
+              "protocol": "HTTP/1.1"
+            }
+          }
+        },
+        {
+          "name": "checkout",
+          "method": "POST",
+          "url": "https://app.example.com/checkout",
+          "expect_status": [200],
+          "mock_response": {
+            "status": 503,
+            "body": "unavailable",
+            "trace": {
+              "total_duration_ns": 7000000,
+              "ttfb_duration_ns": 6000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://app.example.com/checkout",
+              "protocol": "HTTP/1.1"
+            }
+          }
+        },
+        {
+          "name": "confirm",
+          "method": "GET",
+          "url": "https://app.example.com/confirm",
+          "expect_status": [200]
+        }
+      ],
+      "expected": {
+        "status": "CRITICAL",
+        "http_calls": 2,
+        "steps_completed": 1,
+        "step_statuses": ["OK", "CRITICAL", "SKIPPED"],
+        "alert_hint": true,
+        "journey_available": 0,
+        "forbidden_substrings": [],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms"
+        ]
+      }
+    },
+    {
+      "name": "warning_threshold_continues",
+      "journey_name": "slow-cert-warning",
+      "steps": [
+        {
+          "name": "slow-page",
+          "method": "GET",
+          "url": "https://app.example.com/slow",
+          "expect_status": [200],
+          "expect_max_duration_ms": {
+            "warn": 100,
+            "crit": 500
+          },
+          "mock_response": {
+            "status": 200,
+            "body": "ok",
+            "trace": {
+              "total_duration_ns": 250000000,
+              "ttfb_duration_ns": 200000000,
+              "transfer_duration_ns": 50000000,
+              "final_url": "https://app.example.com/slow",
+              "protocol": "HTTP/2.0"
+            }
+          }
+        },
+        {
+          "name": "cert-warn",
+          "method": "GET",
+          "url": "https://app.example.com/status",
+          "expect_status": [200],
+          "expect_min_cert_days": {
+            "warn": 30,
+            "crit": 7
+          },
+          "mock_response": {
+            "status": 200,
+            "body": "ok",
+            "trace": {
+              "total_duration_ns": 10000000,
+              "ttfb_duration_ns": 8000000,
+              "transfer_duration_ns": 2000000,
+              "final_url": "https://app.example.com/status",
+              "protocol": "HTTP/2.0"
+            },
+            "tls": {
+              "version": "TLS1.3",
+              "leaf_not_after_unix": 1791806400,
+              "leaf_days_remaining": 15
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "WARNING",
+        "http_calls": 2,
+        "steps_completed": 2,
+        "step_statuses": ["WARNING", "WARNING"],
+        "alert_hint": false,
+        "journey_available": 1,
+        "forbidden_substrings": [],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms",
+          "synthetic.step.tls_cert_days_remaining"
+        ]
+      }
+    }
+  ]
+}
