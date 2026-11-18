@@ -59,8 +59,7 @@ struct JourneyScenStep {
     #[serde(default)]
     expect_status: Vec<i32>,
     expect_header: Option<NameValue>,
-    #[serde(default)]
-    expect_body_contains: String,
+    expect_body_contains: Option<String>,
     expect_json_field: Option<PointerValue>,
     expect_max_duration_ms: Option<ThresholdF64>,
     expect_min_cert_days: Option<ThresholdI64>,
@@ -132,6 +131,8 @@ struct JourneyExpect {
     forbidden_substrings: Vec<String>,
     #[serde(default)]
     expected_metric_names: Vec<String>,
+    #[serde(default)]
+    forbidden_metric_names: Vec<String>,
 }
 
 #[test]
@@ -189,8 +190,8 @@ fn run_journey_scenario(scen: JourneyScen, now: std::time::SystemTime) {
         if let Some(h) = &s.expect_header {
             step = step.expect_header_exact(&h.name, &h.value);
         }
-        if !s.expect_body_contains.is_empty() {
-            step = step.expect_body_contains(&s.expect_body_contains);
+        if let Some(substr) = &s.expect_body_contains {
+            step = step.expect_body_contains(substr);
         }
         if let Some(jf) = &s.expect_json_field {
             step = step.expect_json_field(&jf.pointer, jf.value.clone());
@@ -339,6 +340,12 @@ fn run_journey_scenario(scen: JourneyScen, now: std::time::SystemTime) {
         assert!(
             seen_metrics.contains_key(want_name),
             "{scenario_name}: missing metric {want_name} in {seen_metrics:?}"
+        );
+    }
+    for forbid_name in &scen.expected.forbidden_metric_names {
+        assert!(
+            !seen_metrics.contains_key(forbid_name),
+            "{scenario_name}: unexpected forbidden metric {forbid_name} in {seen_metrics:?}"
         );
     }
     assert_eq!(

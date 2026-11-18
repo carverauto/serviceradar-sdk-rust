@@ -636,8 +636,8 @@ mod credential_grants {
                             alpn: "h2".to_string(),
                             leaf_subject_cn: "sso.example.com".to_string(),
                             leaf_issuer_cn: "Test CA".to_string(),
-                            leaf_not_after_unix: 1_790_553_600,
-                            leaf_days_remaining: 0,
+                            leaf_not_after_unix: Some(1_790_553_600),
+                            leaf_days_remaining: Some(0),
                         }),
                         ..HttpResponse::default()
                     })
@@ -660,6 +660,6 @@ mod credential_grants {
         let resp = got_resp.unwrap();
         assert_eq!(resp.set_cookies.len(), 2);
         assert_eq!(resp.trace.as_ref().unwrap().total_duration_ns, 10500);
-        assert_eq!(resp.tls.as_ref().unwrap().leaf_days_remaining, 0);
+        assert_eq!(resp.tls.as_ref().unwrap().leaf_days_remaining, Some(0));
     }
 }

@@ -644,12 +644,8 @@ impl Journey {
         } else {
             outcome.duration_ms = resp.duration.as_nanos() as f64 / 1_000_000.0;
         }
-        if let Some(tls) = &resp.tls
-            && (tls.leaf_not_after_unix != 0
-                || !tls.leaf_subject_cn.is_empty()
-                || !tls.version.is_empty())
-        {
-            outcome.tls_cert_days = Some(tls.leaf_days_remaining);
+        if let Some(days) = resp.tls.as_ref().and_then(|tls| tls.leaf_days_remaining) {
+            outcome.tls_cert_days = Some(days);
         }
 
         let effective_url = resp
@@ -713,11 +709,11 @@ impl Journey {
                     }
                 }
                 StepAssertion::BodyContains(substr) => {
-                    if !resp
-                        .body
-                        .windows(substr.len())
-                        .any(|w| w == substr.as_bytes())
-                        && !substr.is_empty()
+                    if !substr.is_empty()
+                        && !resp
+                            .body
+                            .windows(substr.len())
+                            .any(|w| w == substr.as_bytes())
                     {
                         let msg = format!("response body missing expected substring \"{substr}\"");
                         outcome.status = StepStatus::Critical;
@@ -1302,7 +1298,7 @@ fn merge_cookie_headers(jar_header: Option<&str>, explicit_header: Option<&str>)
 }
 
 fn resolve_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
-    if path.is_empty() || path == "/" {
+    if path.is_empty() {
         return Some(root);
     }
 
@@ -1561,5 +1557,157 @@ mod tests {
             got_cookie.lock().unwrap().as_deref(),
             Some("sid=path-scoped-secret")
         );
+    }
+
+    #[test]
+    fn journey_empty_expect_body_contains_succeeds_without_panic() {
+        let journey = Journey::new("empty-body-substr").with_step(
+            JourneyStep::get("step1", "https://app.example.test/health")
+                .expect_status_code(200)
+                .expect_body_contains(""),
+        );
+
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"ok".to_vec(),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Ok);
+                assert_eq!(report.steps[0].status, StepStatus::Ok);
+                Ok(())
+            },
+        );
+        res.unwrap();
+    }
+
+    #[test]
+    fn journey_tls_without_leaf_cert_leaves_cert_days_none() {
+        use crate::HttpTlsInfo;
+
+        let journey = Journey::new("tls-no-leaf").with_step(
+            JourneyStep::get("step1", "https://app.example.test/health")
+                .expect_status_code(200)
+                .expect_min_cert_days(Some(30), Some(7)),
+        );
+
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"ok".to_vec(),
+                        tls: Some(HttpTlsInfo {
+                            version: "TLS1.3".to_string(),
+                            cipher_suite: "TLS_AES_128_GCM_SHA256".to_string(),
+                            alpn: "h2".to_string(),
+                            ..HttpTlsInfo::default()
+                        }),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Ok);
+                assert_eq!(report.steps[0].status, StepStatus::Ok);
+                assert_eq!(report.steps[0].tls_cert_days, None);
+                assert!(
+                    !report
+                        .metric_batch
+                        .metrics
+                        .iter()
+                        .any(|m| m.name == "synthetic.step.tls_cert_days_remaining")
+                );
+                Ok(())
+            },
+        );
+        res.unwrap();
+
+        let zero_day_journey = Journey::new("tls-zero-days").with_step(
+            JourneyStep::get("step1", "https://app.example.test/health")
+                .expect_status_code(200)
+                .expect_min_cert_days(Some(30), Some(7)),
+        );
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"ok".to_vec(),
+                        tls: Some(HttpTlsInfo {
+                            version: "TLS1.3".to_string(),
+                            leaf_not_after_unix: Some(1_790_553_600),
+                            leaf_days_remaining: Some(0),
+                            ..HttpTlsInfo::default()
+                        }),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = zero_day_journey.execute()?;
+                assert_eq!(report.status, Status::Critical);
+                assert_eq!(report.steps[0].tls_cert_days, Some(0));
+                assert!(
+                    report
+                        .metric_batch
+                        .metrics
+                        .iter()
+                        .any(|m| m.name == "synthetic.step.tls_cert_days_remaining")
+                );
+                Ok(())
+            },
+        );
+        res.unwrap();
+    }
+
+    #[test]
+    fn journey_json_pointer_slash_resolves_empty_string_key() {
+        let doc = serde_json::json!({"": "empty-key-val", "a": "other"});
+        assert_eq!(resolve_json_path(&doc, ""), Some(&doc));
+        assert_eq!(
+            resolve_json_path(&doc, "/"),
+            Some(&Value::String("empty-key-val".to_string()))
+        );
+
+        let journey = Journey::new("rfc6901-empty-key").with_step(
+            JourneyStep::get("step1", "https://app.example.test/data")
+                .expect_status_code(200)
+                .expect_json_field("/", Value::String("empty-key-val".to_string()))
+                .extract_json_field("empty_val", "/"),
+        );
+
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: br#"{"":"empty-key-val","a":"other"}"#.to_vec(),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Ok);
+                Ok(())
+            },
+        );
+        res.unwrap();
     }
 }

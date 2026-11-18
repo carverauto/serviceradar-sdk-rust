@@ -559,6 +559,132 @@
           "synthetic.step.transfer_ms"
         ]
       }
+    },
+    {
+      "name": "adversarial_empty_body_contains_tls_no_leaf_and_json_pointer_slash",
+      "journey_name": "adversarial-edge-cases",
+      "steps": [
+        {
+          "name": "edge-step",
+          "method": "GET",
+          "url": "https://app.example.com/edge",
+          "expect_status": [200],
+          "expect_body_contains": "",
+          "expect_json_field": {
+            "pointer": "/",
+            "value": "empty-key-val"
+          },
+          "expect_min_cert_days": {
+            "warn": 30,
+            "crit": 7
+          },
+          "extract_json_field": {
+            "pointer": "/",
+            "var": "empty_val"
+          },
+          "mock_response": {
+            "status": 200,
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": "{\"\":\"empty-key-val\",\"a\":\"other\"}",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://app.example.com/edge",
+              "protocol": "HTTP/2.0"
+            },
+            "tls": {
+              "version": "TLS1.3",
+              "cipher_suite": "TLS_AES_128_GCM_SHA256",
+              "alpn": "h2"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "OK",
+        "http_calls": 1,
+        "steps_completed": 1,
+        "step_statuses": ["OK"],
+        "alert_hint": false,
+        "journey_available": 1,
+        "forbidden_substrings": [
+          "empty-key-val"
+        ],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms"
+        ],
+        "forbidden_metric_names": [
+          "synthetic.step.tls_cert_days_remaining"
+        ]
+      }
+    },
+    {
+      "name": "leaf_cert_zero_days_remaining_triggers_critical",
+      "journey_name": "leaf-cert-zero-days",
+      "steps": [
+        {
+          "name": "expiring-today",
+          "method": "GET",
+          "url": "https://app.example.com/expiring",
+          "expect_status": [200],
+          "expect_min_cert_days": {
+            "warn": 30,
+            "crit": 7
+          },
+          "mock_response": {
+            "status": 200,
+            "body": "ok",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://app.example.com/expiring",
+              "protocol": "HTTP/2.0"
+            },
+            "tls": {
+              "version": "TLS1.3",
+              "cipher_suite": "TLS_AES_128_GCM_SHA256",
+              "alpn": "h2",
+              "leaf_subject_cn": "app.example.com",
+              "leaf_issuer_cn": "Example CA",
+              "leaf_not_after_unix": 1790553600,
+              "leaf_days_remaining": 0
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "CRITICAL",
+        "http_calls": 1,
+        "steps_completed": 0,
+        "step_statuses": ["CRITICAL"],
+        "alert_hint": true,
+        "journey_available": 0,
+        "forbidden_substrings": [],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms",
+          "synthetic.step.tls_cert_days_remaining"
+        ]
+      }
     }
   ]
 }

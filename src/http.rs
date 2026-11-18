@@ -201,10 +201,10 @@ pub struct HttpTlsInfo {
     pub leaf_subject_cn: String,
     #[serde(default)]
     pub leaf_issuer_cn: String,
-    #[serde(default)]
-    pub leaf_not_after_unix: i64,
-    #[serde(default)]
-    pub leaf_days_remaining: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaf_not_after_unix: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaf_days_remaining: Option<i64>,
 }
 
 /// Proxied response data. `headers`, `set_cookies`, `trace`, and `tls` are

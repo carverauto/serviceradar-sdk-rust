@@ -243,5 +243,14 @@ fn follow_redirects_and_envelope_waterfall_decode() {
     assert!((trace.total_ms() - 19.2).abs() < 1e-6);
     let tls = decoded.tls.as_ref().expect("tls");
     assert_eq!(tls.version, "TLS1.3");
-    assert_eq!(tls.leaf_days_remaining, 0);
+    assert_eq!(tls.leaf_not_after_unix, Some(1_790_553_600));
+    assert_eq!(tls.leaf_days_remaining, Some(0));
+
+    let no_leaf_payload = br#"{"status":200,"body_base64":"","tls":{"version":"TLS1.3","cipher_suite":"TLS_AES_128_GCM_SHA256"}}"#;
+    let no_leaf =
+        super::decode_envelope_response(no_leaf_payload, Duration::from_millis(1)).unwrap();
+    let no_leaf_tls = no_leaf.tls.as_ref().expect("tls without leaf");
+    assert_eq!(no_leaf_tls.version, "TLS1.3");
+    assert_eq!(no_leaf_tls.leaf_not_after_unix, None);
+    assert_eq!(no_leaf_tls.leaf_days_remaining, None);
 }
