@@ -659,6 +659,7 @@ impl Journey {
             .map_or(resolved_url.as_str(), |t| t.final_url.as_str());
         let set_cookies = resp.header_values("Set-Cookie");
         jar.store_set_cookies_at(effective_url, &set_cookies, now);
+        let mut step_jar: Option<CookieJar> = None;
 
         let mut parsed_json: Option<Result<Value, String>> = None;
 
@@ -811,7 +812,20 @@ impl Journey {
                                 None
                             }
                         })
-                        .or_else(|| jar.latest_value_by_name(cookie));
+                        .or_else(|| {
+                            if set_cookies.is_empty() {
+                                None
+                            } else {
+                                let is_https = Url::parse(effective_url.trim())
+                                    .is_ok_and(|u| u.scheme().eq_ignore_ascii_case("https"));
+                                let sj = step_jar.get_or_insert_with(|| {
+                                    let mut sj = CookieJar::new();
+                                    sj.store_set_cookies_at(effective_url, &set_cookies, now);
+                                    sj
+                                });
+                                sj.latest_accepted_value_by_name(cookie, is_https)
+                            }
+                        });
                     let Some(val) = found else {
                         let msg = format!("extractor \"{var}\": missing cookie \"{cookie}\"");
                         outcome.status = StepStatus::Critical;
@@ -1437,5 +1451,115 @@ mod tests {
             },
         );
         res.unwrap();
+    }
+
+    #[test]
+    fn journey_extract_cookie_cross_domain_fails() {
+        let journey = Journey::new("cross-domain-extract")
+            .with_step(
+                JourneyStep::get("login", "https://sso.example.com/login").expect_status_code(200),
+            )
+            .with_step(
+                JourneyStep::get("other", "https://other.example.com/check")
+                    .expect_status_code(200)
+                    .extract_cookie("stolen", "sid"),
+            );
+
+        let step2_cookie = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let step2_cookie_clone = std::sync::Arc::clone(&step2_cookie);
+
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(move |req| {
+                    if req.url.contains("sso.example.com") {
+                        return Ok(HttpResponse {
+                            status: 200,
+                            set_cookies: vec!["sid=sso-only-secret; Path=/; Secure".to_string()],
+                            body: b"ok".to_vec(),
+                            ..HttpResponse::default()
+                        });
+                    }
+                    *step2_cookie_clone.lock().unwrap() = req.headers.get("Cookie").cloned();
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"ok".to_vec(),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Critical);
+                assert_eq!(report.steps[0].status, StepStatus::Ok);
+                assert_eq!(report.steps[1].status, StepStatus::Critical);
+                Ok(())
+            },
+        );
+        res.unwrap();
+        assert_eq!(*step2_cookie.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn journey_extract_cookie_same_step_path_fallback_succeeds() {
+        let journey = Journey::new("same-step-path-extract")
+            .with_step(
+                JourneyStep::get("login", "https://sso.example.com/auth/login")
+                    .expect_status_code(200)
+                    .extract_cookie("sid_tok", "sid"),
+            )
+            .with_step(
+                JourneyStep::get("app", "https://sso.example.com/app/me")
+                    .with_header("X-Sid", "{{sid_tok}}")
+                    .expect_status_code(200),
+            );
+
+        let got_x_sid = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let got_cookie = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let got_x_sid_clone = std::sync::Arc::clone(&got_x_sid);
+        let got_cookie_clone = std::sync::Arc::clone(&got_cookie);
+
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(move |req| {
+                    if req.url.contains("/auth/login") {
+                        return Ok(HttpResponse {
+                            status: 200,
+                            set_cookies: vec![
+                                "sid=path-scoped-secret; Path=/app; Secure".to_string(),
+                            ],
+                            body: b"ok".to_vec(),
+                            ..HttpResponse::default()
+                        });
+                    }
+                    *got_x_sid_clone.lock().unwrap() = req.headers.get("X-Sid").cloned();
+                    *got_cookie_clone.lock().unwrap() = req.headers.get("Cookie").cloned();
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"ok".to_vec(),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Ok);
+                let json = serde_json::to_string(&report.plugin_result).unwrap();
+                assert!(!json.contains("path-scoped-secret"));
+                Ok(())
+            },
+        );
+        res.unwrap();
+        assert_eq!(
+            got_x_sid.lock().unwrap().as_deref(),
+            Some("path-scoped-secret")
+        );
+        assert_eq!(
+            got_cookie.lock().unwrap().as_deref(),
+            Some("sid=path-scoped-secret")
+        );
     }
 }

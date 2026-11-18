@@ -84,7 +84,7 @@ impl CookieJar {
         let Ok(parsed) = Url::parse(request_url.trim()) else {
             return;
         };
-        let Some(host) = parsed.host_str().map(normalize_cookie_host) else {
+        let Some(host) = parsed.host_str().map(normalize_url_host) else {
             return;
         };
         if host.is_empty() {
@@ -133,7 +133,8 @@ impl CookieJar {
                 None => (attr, ""),
             };
             if attr_name.eq_ignore_ascii_case("domain") {
-                let candidate = normalize_cookie_host(attr_val.trim_start_matches('.'));
+                let candidate =
+                    normalize_cookie_host(attr_val.strip_prefix('.').unwrap_or(attr_val));
                 if candidate.is_empty() {
                     continue;
                 }
@@ -155,7 +156,7 @@ impl CookieJar {
             } else if attr_name.eq_ignore_ascii_case("httponly") {
                 http_only = true;
             } else if attr_name.eq_ignore_ascii_case("max-age") {
-                if let Ok(secs) = attr_val.parse::<i64>() {
+                if let Some(secs) = parse_cookie_max_age(attr_val) {
                     max_age = Some(secs);
                 }
             } else if attr_name.eq_ignore_ascii_case("expires")
@@ -231,7 +232,7 @@ impl CookieJar {
             return Vec::new();
         };
         let scheme = parsed.scheme().to_ascii_lowercase();
-        let Some(req_host) = parsed.host_str().map(normalize_cookie_host) else {
+        let Some(req_host) = parsed.host_str().map(normalize_url_host) else {
             return Vec::new();
         };
         if req_host.is_empty() {
@@ -309,22 +310,54 @@ impl CookieJar {
             .map(|c| c.value.clone())
     }
 
-    pub(crate) fn latest_value_by_name(&self, name: &str) -> Option<String> {
+    pub(crate) fn latest_accepted_value_by_name(
+        &self,
+        name: &str,
+        is_https: bool,
+    ) -> Option<String> {
         self.cookies
             .iter()
             .rev()
-            .find(|c| c.name == name)
+            .find(|c| c.name == name && (!c.secure || is_https))
             .map(|c| c.value.clone())
     }
 }
 
+const MAX_COOKIE_DURATION_SECS: i64 = i64::MAX / 1_000_000_000;
+
+fn parse_cookie_max_age(raw: &str) -> Option<i64> {
+    if raw.is_empty() {
+        return None;
+    }
+    match raw.parse::<i64>() {
+        Ok(secs) => Some(secs.min(MAX_COOKIE_DURATION_SECS)),
+        Err(_) if is_signed_digits(raw) => {
+            if raw.starts_with('-') {
+                Some(0)
+            } else {
+                Some(MAX_COOKIE_DURATION_SECS)
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+fn is_signed_digits(s: &str) -> bool {
+    let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn normalize_url_host(host: &str) -> String {
+    let trimmed = host.trim();
+    let unwrapped = trimmed
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(trimmed);
+    normalize_cookie_host(unwrapped)
+}
+
 fn normalize_cookie_host(host: &str) -> String {
-    let trimmed = host
-        .trim()
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .trim_end_matches('.');
-    trimmed.to_ascii_lowercase()
+    host.trim().trim_end_matches('.').to_ascii_lowercase()
 }
 
 fn default_cookie_path(req_path: &str) -> String {
@@ -392,5 +425,76 @@ mod tests {
         assert_eq!(matches.len(), 1);
         let cookie_debug = format!("{:?}", matches[0]);
         assert!(!cookie_debug.contains("super-secret-cookie"));
+    }
+
+    #[test]
+    fn cookie_jar_large_max_age_retained() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_790_510_400);
+        let mut jar = CookieJar::new();
+        jar.store_set_cookies_at(
+            "https://overflow.example.com/login",
+            &[
+                "long_lived=still_here; Path=/; Max-Age=10000000000".to_string(),
+                "huge_pos=kept; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=99999999999999999999999999999".to_string(),
+                "huge_plus=kept_plus; Path=/; Max-Age=+99999999999999999999999999999".to_string(),
+                "bad_syntax=not_clamped; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=99999999999999999999999999999abc".to_string(),
+            ],
+            now,
+        );
+        assert_eq!(
+            jar.cookie_header_for_url_at("https://overflow.example.com/check", now)
+                .as_deref(),
+            Some("long_lived=still_here; huge_pos=kept; huge_plus=kept_plus")
+        );
+
+        jar.store_set_cookies_at(
+            "https://overflow.example.com/logout",
+            &["long_lived=gone; Path=/; Max-Age=-99999999999999999999999999999".to_string()],
+            now,
+        );
+        assert_eq!(
+            jar.cookie_header_for_url_at("https://overflow.example.com/check", now)
+                .as_deref(),
+            Some("huge_pos=kept; huge_plus=kept_plus")
+        );
+    }
+
+    #[test]
+    fn cookie_jar_rejects_double_dot_and_ipv6_brackets() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_790_510_400);
+        let mut jar = CookieJar::new();
+        jar.store_set_cookies_at(
+            "https://sso.example.com/login",
+            &[
+                "double_dot=evil; Domain=..example.com; Path=/".to_string(),
+                "single_dot=ok; Domain=.example.com; Path=/".to_string(),
+            ],
+            now,
+        );
+        assert_eq!(
+            jar.cookie_header_for_url_at("https://sso.example.com/check", now)
+                .as_deref(),
+            Some("single_dot=ok")
+        );
+        assert_eq!(
+            jar.cookie_header_for_url_at("https://app.example.com/check", now)
+                .as_deref(),
+            Some("single_dot=ok")
+        );
+
+        jar.store_set_cookies_at(
+            "https://[::1]/login",
+            &[
+                "v6_host=v1; Path=/".to_string(),
+                "v6_dom=v2; Domain=::1; Path=/".to_string(),
+                "v6_brack=v3; Domain=[::1]; Path=/".to_string(),
+            ],
+            now,
+        );
+        assert_eq!(
+            jar.cookie_header_for_url_at("https://[::1]/check", now)
+                .as_deref(),
+            Some("v6_host=v1; v6_dom=v2")
+        );
     }
 }

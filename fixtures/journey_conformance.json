@@ -97,6 +97,54 @@
           "want_header": "ip_sub=val2; ip_tok=val1"
         }
       ]
+    },
+    {
+      "name": "large_max_age_double_dot_and_ipv6_brackets",
+      "steps": [
+        {
+          "action": "store",
+          "url": "https://overflow.example.com/login",
+          "set_cookies": [
+            "long_lived=still_here; Path=/; Max-Age=10000000000"
+          ]
+        },
+        {
+          "action": "query",
+          "url": "https://overflow.example.com/check",
+          "want_header": "long_lived=still_here"
+        },
+        {
+          "action": "store",
+          "url": "https://sso.example.com/login",
+          "set_cookies": [
+            "double_dot=evil; Domain=..example.com; Path=/"
+          ]
+        },
+        {
+          "action": "query",
+          "url": "https://sso.example.com/check",
+          "want_header": ""
+        },
+        {
+          "action": "query",
+          "url": "https://app.example.com/check",
+          "want_header": ""
+        },
+        {
+          "action": "store",
+          "url": "https://[::1]/login",
+          "set_cookies": [
+            "v6_host=v1; Path=/",
+            "v6_dom=v2; Domain=::1; Path=/",
+            "v6_brack=v3; Domain=[::1]; Path=/"
+          ]
+        },
+        {
+          "action": "query",
+          "url": "https://[::1]/check",
+          "want_header": "v6_host=v1; v6_dom=v2"
+        }
+      ]
     }
   ],
   "http_envelope_vectors": [
@@ -440,6 +488,75 @@
           "synthetic.step.ttfb_ms",
           "synthetic.step.transfer_ms",
           "synthetic.step.tls_cert_days_remaining"
+        ]
+      }
+    },
+    {
+      "name": "cross_domain_extract_cookie_fails",
+      "journey_name": "cross-domain-extract",
+      "steps": [
+        {
+          "name": "login",
+          "method": "GET",
+          "url": "https://sso.example.com/login",
+          "expect_status": [200],
+          "mock_response": {
+            "status": 200,
+            "set_cookies": [
+              "sid=sso-only-secret; Path=/; Secure"
+            ],
+            "body": "ok",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://sso.example.com/login",
+              "protocol": "HTTP/2.0"
+            }
+          }
+        },
+        {
+          "name": "other",
+          "method": "GET",
+          "url": "https://other.example.com/check",
+          "expect_status": [200],
+          "extract_cookie": {
+            "cookie": "sid",
+            "var": "stolen"
+          },
+          "mock_response": {
+            "status": 200,
+            "body": "ok",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://other.example.com/check",
+              "protocol": "HTTP/2.0"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "CRITICAL",
+        "http_calls": 2,
+        "steps_completed": 1,
+        "step_statuses": ["OK", "CRITICAL"],
+        "alert_hint": true,
+        "journey_available": 0,
+        "forbidden_substrings": [
+          "sso-only-secret"
+        ],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms"
         ]
       }
     }
