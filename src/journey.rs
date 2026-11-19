@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use url::Url;
@@ -612,10 +612,12 @@ impl Journey {
             follow_redirects: step.follow_redirects,
         };
 
+        let started = Instant::now();
         let resp = match self.client.do_request(request) {
             Ok(resp) => resp,
             Err(err) => {
                 let msg = sanitize_error_message(&err, vars);
+                outcome.duration_ms = started.elapsed().as_nanos() as f64 / 1_000_000.0;
                 outcome.status = StepStatus::Critical;
                 outcome.error = Some(msg.clone());
                 return (outcome, None, Some(msg), None);
@@ -683,13 +685,13 @@ impl Journey {
                     }
                 }
                 StepAssertion::Header(name, matcher) => {
-                    let got = resp.header(name);
+                    let got = resp.header_values(name);
                     match matcher {
                         HeaderMatch::Exact(expected) => {
                             let ok = if expected.is_empty() {
-                                got.is_some_and(|v| !v.is_empty())
+                                got.iter().any(|v| !v.is_empty())
                             } else {
-                                got == Some(expected.as_str())
+                                got.iter().any(|v| v == expected)
                             };
                             if !ok {
                                 let msg = format!("header \"{name}\" mismatch");
@@ -699,7 +701,7 @@ impl Journey {
                             }
                         }
                         HeaderMatch::Contains(substr) => {
-                            if !got.is_some_and(|v| v.contains(substr.as_str())) {
+                            if !got.iter().any(|v| v.contains(substr.as_str())) {
                                 let msg = format!("header \"{name}\" missing expected substring");
                                 outcome.status = StepStatus::Critical;
                                 outcome.error = Some(msg.clone());
@@ -731,7 +733,8 @@ impl Journey {
                             return (outcome, Some(resp), Some(msg), None);
                         }
                     };
-                    let matched = resolve_json_path(root, pointer)
+                    let matched = root
+                        .pointer(pointer)
                         .is_some_and(|actual| json_values_equal(actual, expected));
                     if !matched {
                         let msg = format!("JSON field \"{pointer}\" did not match expected value");
@@ -795,13 +798,17 @@ impl Journey {
         for extractor in &step.extractors {
             match extractor {
                 StepExtractor::Header { var, header } => {
-                    let Some(val) = resp.header(header).filter(|v| !v.is_empty()) else {
+                    let Some(val) = resp
+                        .header_values(header)
+                        .into_iter()
+                        .find(|v| !v.is_empty())
+                    else {
                         let msg = format!("extractor \"{var}\": missing header \"{header}\"");
                         outcome.status = StepStatus::Critical;
                         outcome.error = Some(msg.clone());
                         return (outcome, Some(resp), Some(msg), None);
                     };
-                    vars.insert(var.clone(), val.to_string());
+                    vars.insert(var.clone(), val);
                 }
                 StepExtractor::Cookie { var, cookie } => {
                     let found = jar
@@ -846,7 +853,7 @@ impl Journey {
                             return (outcome, Some(resp), Some(msg), None);
                         }
                     };
-                    let Some(val) = resolve_json_path(root, path) else {
+                    let Some(val) = root.pointer(path) else {
                         let msg = format!("extractor \"{var}\": missing JSON field \"{path}\"");
                         outcome.status = StepStatus::Critical;
                         outcome.error = Some(msg.clone());
@@ -1277,11 +1284,8 @@ fn merge_cookie_headers(jar_header: Option<&str>, explicit_header: Option<&str>)
                     };
                     let name = name.trim().to_string();
                     let val = val.trim().to_string();
-                    if override_existing
-                        && let Some(existing) = pairs.iter_mut().find(|(n, _)| *n == name)
-                    {
-                        existing.1 = val;
-                        continue;
+                    if override_existing {
+                        pairs.retain(|(n, _)| *n != name);
                     }
                     pairs.push((name, val));
                 }
@@ -1302,71 +1306,15 @@ fn merge_cookie_headers(jar_header: Option<&str>, explicit_header: Option<&str>)
     }
 }
 
-fn resolve_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
-    if path.is_empty() {
-        return Some(root);
-    }
-
-    let tokens: Vec<String> = if let Some(rest) = path.strip_prefix('/') {
-        rest.split('/')
-            .map(|tok| tok.replace("~1", "/").replace("~0", "~"))
-            .collect()
-    } else {
-        let mut out = Vec::new();
-        for mut part in path.split('.') {
-            if part.is_empty() {
-                continue;
-            }
-            while let Some(open) = part.find('[') {
-                if open > 0 {
-                    out.push(part[..open].to_string());
-                }
-                let after_open = &part[open + 1..];
-                let Some(close) = after_open.find(']') else {
-                    out.push(part[open..].to_string());
-                    part = "";
-                    break;
-                };
-                out.push(after_open[..close].to_string());
-                part = &after_open[close + 1..];
-            }
-            if !part.is_empty() {
-                out.push(part.to_string());
-            }
-        }
-        out
-    };
-
-    let mut curr = root;
-    for tok in tokens {
-        match curr {
-            Value::Object(map) => {
-                curr = map.get(&tok)?;
-            }
-            Value::Array(arr) => {
-                let idx = tok.parse::<usize>().ok()?;
-                curr = arr.get(idx)?;
-            }
-            _ => return None,
-        }
-    }
-    Some(curr)
-}
-
 fn json_values_equal(actual: &Value, expected: &Value) -> bool {
     if actual == expected {
         return true;
     }
     match (actual, expected) {
-        (Value::Number(a), Value::Number(b)) => {
-            if let (Some(ai), Some(bi)) = (a.as_i64(), b.as_i64()) {
-                ai == bi
-            } else if let (Some(af), Some(bf)) = (a.as_f64(), b.as_f64()) {
-                af == bf
-            } else {
-                false
-            }
-        }
+        (Value::Number(a), Value::Number(b)) => match (exact_f64(a), exact_f64(b)) {
+            (Some(af), Some(bf)) => af == bf,
+            _ => false,
+        },
         (Value::Object(a), Value::Object(b)) => {
             a.len() == b.len()
                 && a.iter()
@@ -1380,6 +1328,19 @@ fn json_values_equal(actual: &Value, expected: &Value) -> bool {
         }
         _ => false,
     }
+}
+
+fn exact_f64(n: &serde_json::Number) -> Option<f64> {
+    if n.is_f64() {
+        return n.as_f64();
+    }
+    let f = n.as_f64()?;
+    let exact = match (n.as_i64(), n.as_u64()) {
+        (Some(i), _) => f >= -(2f64.powi(63)) && f < 2f64.powi(63) && f as i64 == i,
+        (_, Some(u)) => f >= 0.0 && f < 2f64.powi(64) && f as u64 == u,
+        _ => false,
+    };
+    exact.then_some(f)
 }
 
 fn json_scalar_to_string(value: &Value) -> Option<String> {
@@ -1430,14 +1391,14 @@ mod tests {
     }
 
     #[test]
-    fn journey_dot_path_and_rfc6901_unescaping() {
+    fn journey_rfc6901_pointer_unescaping() {
         let journey = Journey::new("paths").with_step(
             JourneyStep::get("step1", "https://api.example.com/items?secret=1")
                 .expect_status_range(200, 299)
                 .expect_header_contains("Content-Type", "json")
                 .expect_json_field("/data/items/0/slash~1key", Value::String("ok".to_string()))
-                .expect_json_field("data.items[0].id", Value::String("42".to_string()))
-                .extract_json_field("item_id", "data.items[0].id"),
+                .expect_json_field("/data/items/0/id", Value::String("42".to_string()))
+                .extract_json_field("item_id", "/data/items/0/id"),
         );
 
         let (_capture, res) = run_local_host(
@@ -1691,9 +1652,9 @@ mod tests {
     #[test]
     fn journey_json_pointer_slash_resolves_empty_string_key() {
         let doc = serde_json::json!({"": "empty-key-val", "a": "other"});
-        assert_eq!(resolve_json_path(&doc, ""), Some(&doc));
+        assert_eq!(doc.pointer(""), Some(&doc));
         assert_eq!(
-            resolve_json_path(&doc, "/"),
+            doc.pointer("/"),
             Some(&Value::String("empty-key-val".to_string()))
         );
 
@@ -1887,5 +1848,141 @@ mod tests {
             },
         );
         res.unwrap();
+    }
+
+    #[test]
+    fn journey_failed_request_records_elapsed_duration() {
+        let journey = Journey::new("timeout").with_step(
+            JourneyStep::get("slow", "https://app.example.test/slow").expect_status_code(200),
+        );
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    std::thread::sleep(Duration::from_millis(20));
+                    Err(Error::Message("timeout".to_string()))
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.steps[0].status, StepStatus::Critical);
+                assert!(report.steps[0].duration_ms >= 20.0);
+                assert!(report.total_ms >= 20.0);
+                Ok(())
+            },
+        );
+        res.unwrap();
+    }
+
+    #[test]
+    fn journey_explicit_cookie_replaces_every_jar_pair_with_that_name() {
+        assert_eq!(
+            merge_cookie_headers(Some("sid=path; other=1; sid=root"), Some("sid=override")),
+            Some("other=1; sid=override".to_string())
+        );
+    }
+
+    #[test]
+    fn journey_set_cookie_header_checks_use_unjoined_lines() {
+        let journey = Journey::new("set-cookie-header")
+            .with_step(
+                JourneyStep::get("login", "https://app.example.test/login")
+                    .expect_header_exact("Set-Cookie", "b=2; Path=/")
+                    .expect_header_contains("Set-Cookie", "Expires=Wed, 21 Oct 2026")
+                    .extract_header("first_cookie", "Set-Cookie"),
+            )
+            .with_step(JourneyStep::get(
+                "echo",
+                "https://app.example.test/echo?c={{first_cookie}}",
+            ));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_handler = seen.clone();
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(move |req| {
+                    seen_handler.lock().unwrap().push(req.url.clone());
+                    Ok(HttpResponse {
+                        status: 200,
+                        headers: BTreeMap::from([(
+                            "Set-Cookie".to_string(),
+                            "a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT, b=2; Path=/".to_string(),
+                        )]),
+                        set_cookies: vec![
+                            "a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT".to_string(),
+                            "b=2; Path=/".to_string(),
+                        ],
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Ok);
+                Ok(())
+            },
+        );
+        res.unwrap();
+        let urls = seen.lock().unwrap();
+        let echoed = Url::parse(&urls[1]).unwrap();
+        let c = echoed
+            .query_pairs()
+            .find(|(k, _)| k == "c")
+            .map(|(_, v)| v.into_owned());
+        assert_eq!(
+            c.as_deref(),
+            Some("a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT")
+        );
+    }
+
+    #[test]
+    fn journey_json_numbers_compare_exactly_beyond_f64_precision() {
+        assert!(!json_values_equal(
+            &serde_json::json!(9_007_199_254_740_993_u64),
+            &serde_json::json!(9_007_199_254_740_992.0)
+        ));
+        assert!(!json_values_equal(
+            &serde_json::json!(9_007_199_254_740_993_i64),
+            &serde_json::json!(9_007_199_254_740_992_i64)
+        ));
+        assert!(json_values_equal(
+            &serde_json::json!(9_007_199_254_740_992_u64),
+            &serde_json::json!(9_007_199_254_740_992.0)
+        ));
+        assert!(!json_values_equal(
+            &serde_json::json!(i64::MAX),
+            &serde_json::json!(9_223_372_036_854_775_808.0)
+        ));
+    }
+
+    #[test]
+    fn journey_json_paths_accept_only_rfc6901_pointers() {
+        for path in ["items[0]", "items.0", "/items/00", "/items/01"] {
+            let journey = Journey::new("pointer-only").with_step(
+                JourneyStep::get("step1", "https://app.example.test/data")
+                    .expect_json_field(path, Value::String("x".to_string())),
+            );
+            let (_capture, res) = run_local_host(
+                LocalHostOptions {
+                    config_json: b"{}".to_vec(),
+                    http_handler: Some(Box::new(|_| {
+                        Ok(HttpResponse {
+                            status: 200,
+                            body: br#"{"items":["x","x"]}"#.to_vec(),
+                            ..HttpResponse::default()
+                        })
+                    })),
+                    ..LocalHostOptions::default()
+                },
+                || {
+                    let report = journey.execute()?;
+                    assert_eq!(report.status, Status::Critical, "path {path}");
+                    Ok(())
+                },
+            );
+            res.unwrap();
+        }
     }
 }
