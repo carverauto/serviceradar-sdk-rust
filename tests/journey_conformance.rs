@@ -312,18 +312,18 @@ fn run_journey_scenario(scen: JourneyScen, now: std::time::SystemTime) {
         .unwrap();
     let proto_text = String::from_utf8_lossy(&proto_bytes);
 
-    for secret in &scen.expected.forbidden_substrings {
+    for (idx, forbidden) in scen.expected.forbidden_substrings.iter().enumerate() {
         assert!(
-            !result_text.contains(secret),
-            "{scenario_name}: result leaked {secret}: {result_text}"
+            !result_text.contains(forbidden),
+            "{scenario_name}: result contained forbidden_substrings[{idx}]"
         );
         assert!(
-            !telemetry_text.contains(secret),
-            "{scenario_name}: telemetry leaked {secret}"
+            !telemetry_text.contains(forbidden),
+            "{scenario_name}: telemetry contained forbidden_substrings[{idx}]"
         );
         assert!(
-            !proto_text.contains(secret),
-            "{scenario_name}: proto leaked {secret}"
+            !proto_text.contains(forbidden),
+            "{scenario_name}: proto contained forbidden_substrings[{idx}]"
         );
     }
 
