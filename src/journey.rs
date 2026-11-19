@@ -764,24 +764,29 @@ impl Journey {
                     }
                 }
                 StepAssertion::MinCertDays(warn_days, crit_days) => {
-                    if let Some(days) = outcome.tls_cert_days {
-                        if let Some(crit) = crit_days
-                            && days <= *crit
-                        {
-                            let msg = format!(
-                                "TLS certificate expires in {days} days (<= critical {crit})"
-                            );
-                            outcome.status = StepStatus::Critical;
-                            outcome.error = Some(msg.clone());
-                            return (outcome, Some(resp), Some(msg), None);
-                        }
-                        if let Some(warn) = warn_days
-                            && days <= *warn
-                        {
-                            warn_reasons.push(format!(
-                                "TLS certificate expires in {days} days (<= warning {warn})"
-                            ));
-                        }
+                    let Some(days) = outcome.tls_cert_days else {
+                        let msg =
+                            "TLS certificate expiry unavailable for minimum certificate days check"
+                                .to_string();
+                        outcome.status = StepStatus::Critical;
+                        outcome.error = Some(msg.clone());
+                        return (outcome, Some(resp), Some(msg), None);
+                    };
+                    if let Some(crit) = crit_days
+                        && days <= *crit
+                    {
+                        let msg =
+                            format!("TLS certificate expires in {days} days (<= critical {crit})");
+                        outcome.status = StepStatus::Critical;
+                        outcome.error = Some(msg.clone());
+                        return (outcome, Some(resp), Some(msg), None);
+                    }
+                    if let Some(warn) = warn_days
+                        && days <= *warn
+                    {
+                        warn_reasons.push(format!(
+                            "TLS certificate expires in {days} days (<= warning {warn})"
+                        ));
                     }
                 }
             }
@@ -1605,9 +1610,7 @@ mod tests {
         use crate::HttpTlsInfo;
 
         let journey = Journey::new("tls-no-leaf").with_step(
-            JourneyStep::get("step1", "https://app.example.test/health")
-                .expect_status_code(200)
-                .expect_min_cert_days(Some(30), Some(7)),
+            JourneyStep::get("step1", "https://app.example.test/health").expect_status_code(200),
         );
 
         let (_capture, res) = run_local_host(
@@ -1828,6 +1831,58 @@ mod tests {
             || {
                 let report = null_missing_journey.execute()?;
                 assert_eq!(report.status, Status::Critical);
+                Ok(())
+            },
+        );
+        res.unwrap();
+    }
+
+    #[test]
+    fn journey_min_cert_days_fails_closed_without_leaf_cert() {
+        use crate::HttpTlsInfo;
+
+        let journey = Journey::new("tls-missing-leaf-fails-closed").with_step(
+            JourneyStep::get("step1", "https://app.example.test/health")
+                .expect_status_code(200)
+                .expect_min_cert_days(Some(30), Some(7)),
+        );
+
+        let (_capture, res) = run_local_host(
+            LocalHostOptions {
+                config_json: b"{}".to_vec(),
+                http_handler: Some(Box::new(|_| {
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: b"ok".to_vec(),
+                        tls: Some(HttpTlsInfo {
+                            version: "TLS1.3".to_string(),
+                            cipher_suite: "TLS_AES_128_GCM_SHA256".to_string(),
+                            alpn: "h2".to_string(),
+                            ..HttpTlsInfo::default()
+                        }),
+                        ..HttpResponse::default()
+                    })
+                })),
+                ..LocalHostOptions::default()
+            },
+            || {
+                let report = journey.execute()?;
+                assert_eq!(report.status, Status::Critical);
+                assert_eq!(report.steps[0].status, StepStatus::Critical);
+                assert!(
+                    report
+                        .plugin_result
+                        .summary()
+                        .is_some_and(|s| s.contains("TLS certificate expiry unavailable"))
+                );
+                assert_eq!(report.steps[0].tls_cert_days, None);
+                assert!(
+                    !report
+                        .metric_batch
+                        .metrics
+                        .iter()
+                        .any(|m| m.name == "synthetic.step.tls_cert_days_remaining")
+                );
                 Ok(())
             },
         );

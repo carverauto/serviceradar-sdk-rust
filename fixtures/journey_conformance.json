@@ -574,10 +574,6 @@
             "pointer": "/",
             "value": "empty-key-val"
           },
-          "expect_min_cert_days": {
-            "warn": 30,
-            "crit": 7
-          },
           "extract_json_field": {
             "pointer": "/",
             "var": "empty_val"
@@ -841,6 +837,61 @@
           "synthetic.step.tls_ms",
           "synthetic.step.ttfb_ms",
           "synthetic.step.transfer_ms"
+        ]
+      }
+    },
+    {
+      "name": "min_cert_days_fails_closed_without_leaf_cert",
+      "journey_name": "min-cert-days-no-leaf",
+      "steps": [
+        {
+          "name": "missing-leaf-expiry",
+          "method": "GET",
+          "url": "https://app.example.com/tls",
+          "expect_status": [200],
+          "expect_min_cert_days": {
+            "warn": 30,
+            "crit": 7
+          },
+          "mock_response": {
+            "status": 200,
+            "body": "ok",
+            "trace": {
+              "total_duration_ns": 5000000,
+              "ttfb_duration_ns": 4000000,
+              "transfer_duration_ns": 1000000,
+              "final_url": "https://app.example.com/tls",
+              "protocol": "HTTP/2.0"
+            },
+            "tls": {
+              "version": "TLS1.3",
+              "cipher_suite": "TLS_AES_128_GCM_SHA256",
+              "alpn": "h2"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "CRITICAL",
+        "http_calls": 1,
+        "steps_completed": 0,
+        "step_statuses": ["CRITICAL"],
+        "alert_hint": true,
+        "journey_available": 0,
+        "forbidden_substrings": [],
+        "expected_metric_names": [
+          "synthetic.journey.available",
+          "synthetic.journey.duration_ms",
+          "synthetic.journey.steps_completed",
+          "synthetic.step.duration_ms",
+          "synthetic.step.dns_ms",
+          "synthetic.step.connect_ms",
+          "synthetic.step.tls_ms",
+          "synthetic.step.ttfb_ms",
+          "synthetic.step.transfer_ms"
+        ],
+        "forbidden_metric_names": [
+          "synthetic.step.tls_cert_days_remaining"
         ]
       }
     }
