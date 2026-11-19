@@ -14,6 +14,7 @@ const EXAMPLES: &[&str] = &[
     "widgets-check",
     "rtsp-check",
     "northbound-actions",
+    "http-synthetic-journey",
 ];
 
 fn parse_manifest(name: &str, text: &str) -> PluginManifest {

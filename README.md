@@ -20,9 +20,10 @@ This crate lets you write ServiceRadar plugin checkers in Rust without dealing d
 - First-class metric telemetry helpers for canonical `serviceradar.metric.v1` payloads
 - Run overrides that let an action leave time-bounded state for later scheduled runs, and `emit_ocsf_event` for OCSF events from any entrypoint
 - Host-proxied unary gRPC calls
-- HTTP response headers (envelope mode) with `Retry-After` parsing
+- HTTP envelope mode: response headers, unjoined `Set-Cookie` lines, per-hop timing trace, and TLS metadata, plus `Retry-After` parsing
+- Multi-step HTTP synthetic journeys (`Journey`) with a per-run `CookieJar`
 - Typed credential broker grants, including OAuth2 client-credentials injection
-- Example plugins for HTTP, TCP, UDP, RTSP, widgets, WASI clock, and northbound actions
+- Example plugins for HTTP, synthetic journeys, TCP, UDP, RTSP, widgets, WASI clock, and northbound actions
 
 The Go SDK in [`serviceradar-sdk-go`](https://github.com/carverauto/serviceradar-sdk-go) remains the behavior reference for parity, but this crate aims for an idiomatic Rust interface rather than a line-for-line Go port.
 
@@ -82,6 +83,7 @@ pub extern "C" fn run_check() {
 
 - `clock-check`
 - `http-check`
+- `http-synthetic-journey`
 - `tcp-check`
 - `udp-check`
 - `rtsp-check`
@@ -190,6 +192,50 @@ if response.status == 429 {
 }
 let content_type = response.header("content-type"); // case-insensitive
 ```
+
+Envelope responses also carry:
+
+- `set_cookies`: each `Set-Cookie` line unjoined. `header_values("Set-Cookie")`
+  returns these lines.
+- `trace`: an `HttpTrace` with DNS, connect, TLS handshake, TTFB, transfer and
+  total durations, connection reuse, protocol, final URL and per-redirect
+  `hops`.
+- `tls`: an `HttpTlsInfo` with version, cipher suite, ALPN and leaf
+  certificate subject, issuer and expiry.
+
+`HttpRequest::with_follow_redirects(false)` asks the host to return a 3xx
+response instead of following it; leaving it unset keeps the host default.
+
+## Synthetic journeys
+
+`sdk::Journey` runs ordered HTTP steps in envelope mode and shares one
+`CookieJar` across them. Each step can assert status, headers, body text, JSON
+fields (RFC 6901 pointers), duration and leaf-certificate days remaining, and
+can extract headers, cookies or JSON fields into variables that later steps
+use as `{{name}}`. The first critical step skips the rest. `run()` returns the
+plugin result and emits `synthetic.*` step and journey metrics; `execute()` returns a
+`JourneyReport` without emitting.
+
+```rust
+let journey = sdk::Journey::new("login-flow")
+    .with_step(
+        sdk::JourneyStep::post("login", "https://sso.example.com/session", b"{}".to_vec())
+            .with_follow_redirects(false)
+            .expect_status_code(302)
+            .extract_json_field("csrf", "/csrf"),
+    )
+    .with_step(
+        sdk::JourneyStep::get("me", "https://app.example.com/app/me")
+            .with_header("X-CSRF", "{{csrf}}")
+            .expect_json_field("/user/role", serde_json::json!("admin"))
+            .expect_max_duration_ms(Some(1500.0), Some(5000.0)),
+    );
+journey.run()
+```
+
+See `examples/http-synthetic-journey`. `fixtures/journey_conformance.json`
+holds the cross-SDK cookie-jar and journey vectors replayed by
+`tests/journey_conformance.rs`.
 
 ## Unary gRPC
 

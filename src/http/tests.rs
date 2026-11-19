@@ -20,6 +20,7 @@ impl TestHostBackend for HttpTestHost {
             status: 200,
             headers: BTreeMap::from([("content-type".to_string(), "application/json".to_string())]),
             body_base64: base64::engine::general_purpose::STANDARD.encode(br#"{"ok":true}"#),
+            ..HttpResponsePayload::default()
         };
         let encoded = serde_json::to_vec(&response).expect("encode response");
         resp[..encoded.len()].copy_from_slice(&encoded);
@@ -41,6 +42,7 @@ fn http_client_encodes_request_and_decodes_response() {
             response_mode: String::new(),
             timeout_ms: 5_000,
             insecure_skip_verify: false,
+            follow_redirects: None,
         })
         .expect("http request");
 
@@ -74,6 +76,7 @@ fn http_response_helpers_decode_headers_text_and_json() {
         headers: BTreeMap::from([("content-type".to_string(), "application/json".to_string())]),
         body: br#"{"ok":true}"#.to_vec(),
         duration: Duration::from_millis(12),
+        ..HttpResponse::default()
     };
 
     assert_eq!(response.header("Content-Type"), Some("application/json"));
@@ -201,4 +204,53 @@ fn envelope_response_mode_is_named() {
     assert_eq!(payload.response_mode, "envelope");
     let payload = HttpRequestPayload::from_request(HttpRequest::get("https://example.com"));
     assert_eq!(payload.response_mode, super::HTTP_RESPONSE_MODE_STATUS_BODY);
+}
+
+#[test]
+fn follow_redirects_and_envelope_waterfall_decode() {
+    let omit = serde_json::to_string(&HttpRequestPayload::from_request(
+        HttpRequest::get("https://example.com")
+            .with_response_mode(super::HTTP_RESPONSE_MODE_ENVELOPE),
+    ))
+    .unwrap();
+    assert!(!omit.contains("follow_redirects"));
+
+    let disabled = serde_json::to_string(&HttpRequestPayload::from_request(
+        HttpRequest::post(
+            "https://sso.example.com/session",
+            br#"{"grant":"test"}"#.to_vec(),
+        )
+        .with_header("Content-Type", "application/json")
+        .with_response_mode(super::HTTP_RESPONSE_MODE_ENVELOPE)
+        .with_timeout(Duration::from_millis(2500))
+        .with_follow_redirects(false),
+    ))
+    .unwrap();
+    assert!(disabled.contains(r#""follow_redirects":false"#));
+
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../fixtures/journey_conformance.json")).unwrap();
+    let vec = &fixture["http_envelope_vectors"][0];
+    let resp_bytes = serde_json::to_vec(&vec["response_json"]).unwrap();
+    let decoded = super::decode_envelope_response(&resp_bytes, Duration::from_millis(1)).unwrap();
+    assert_eq!(decoded.status, 302);
+    assert_eq!(decoded.set_cookies.len(), 2);
+    assert_eq!(decoded.header_values("Set-Cookie").len(), 2);
+    assert_eq!(decoded.header_values("Location"), vec!["/callback"]);
+    let trace = decoded.trace.as_ref().expect("trace");
+    assert_eq!(trace.hops.len(), 1);
+    assert_eq!(trace.total_duration(), Duration::from_nanos(19_200_000));
+    assert!((trace.total_ms() - 19.2).abs() < 1e-6);
+    let tls = decoded.tls.as_ref().expect("tls");
+    assert_eq!(tls.version, "TLS1.3");
+    assert_eq!(tls.leaf_not_after_unix, Some(1_790_553_600));
+    assert_eq!(tls.leaf_days_remaining, Some(0));
+
+    let no_leaf_payload = br#"{"status":200,"body_base64":"","tls":{"version":"TLS1.3","cipher_suite":"TLS_AES_128_GCM_SHA256"}}"#;
+    let no_leaf =
+        super::decode_envelope_response(no_leaf_payload, Duration::from_millis(1)).unwrap();
+    let no_leaf_tls = no_leaf.tls.as_ref().expect("tls without leaf");
+    assert_eq!(no_leaf_tls.version, "TLS1.3");
+    assert_eq!(no_leaf_tls.leaf_not_after_unix, None);
+    assert_eq!(no_leaf_tls.leaf_days_remaining, None);
 }

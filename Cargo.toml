@@ -45,6 +45,10 @@ path = "examples/rtsp-check/src/main.rs"
 name = "northbound-actions"
 path = "examples/northbound-actions/src/main.rs"
 
+[[example]]
+name = "http-synthetic-journey"
+path = "examples/http-synthetic-journey/src/main.rs"
+
 [features]
 # RTSPS: TLS inside the plugin over the host TCP proxy (pure-Rust crypto, so it
 # builds for wasm32-wasip1 without a C toolchain).

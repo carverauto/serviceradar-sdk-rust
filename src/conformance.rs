@@ -452,6 +452,7 @@ fn replay_http(scenario: &Map<String, Value>) {
         response_mode: golden_string(scenario, "response_mode").to_owned(),
         timeout_ms: golden_u64(scenario, "timeout_ms") as u32,
         insecure_skip_verify: false,
+        follow_redirects: None,
     };
     let response = HttpClient::default()
         .do_request(request)

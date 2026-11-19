@@ -10,6 +10,7 @@ mod check_descriptor;
 mod config;
 #[cfg(test)]
 mod conformance;
+mod cookie_jar;
 mod credential_grant;
 mod device_discovery;
 mod error;
@@ -17,6 +18,7 @@ mod execute;
 mod grpc;
 mod host;
 mod http;
+mod journey;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod local;
 mod log;
@@ -69,6 +71,7 @@ pub use check_descriptor::{
 };
 pub use config::MAX_PAYLOAD_BYTES;
 pub use config::{get_config, get_config_bytes, load_config, load_config_or_default};
+pub use cookie_jar::{Cookie, CookieJar};
 pub use credential_grant::{
     CREDENTIAL_INJECT_BASIC_AUTH, CREDENTIAL_INJECT_BEARER_TOKEN, CREDENTIAL_INJECT_FIELD_PREFIX,
     CREDENTIAL_INJECT_FIXED_PREFIX, CREDENTIAL_INJECT_FORM_URLENCODED, CREDENTIAL_INJECT_HEADER,
@@ -96,8 +99,11 @@ pub use grpc::{
     GrpcRequest, GrpcResponse, GrpcStatusError, GrpcTlsConfig, MAX_GRPC_RESPONSE_BYTES,
 };
 pub use http::{
-    HTTP, HTTP_RESPONSE_MODE_ENVELOPE, HTTP_RESPONSE_MODE_STATUS_BODY, HttpClient, HttpRequest,
-    HttpResponse, MAX_HTTP_RESPONSE_BYTES,
+    HTTP, HTTP_RESPONSE_MODE_ENVELOPE, HTTP_RESPONSE_MODE_STATUS_BODY, HttpClient, HttpHopTrace,
+    HttpRequest, HttpResponse, HttpTlsInfo, HttpTrace, MAX_HTTP_RESPONSE_BYTES,
+};
+pub use journey::{
+    HeaderMatch, Journey, JourneyReport, JourneyStep, Step, StepOutcome, StepStatus,
 };
 pub use log::{LOG, LogLevel, Logger};
 pub use manifest::{

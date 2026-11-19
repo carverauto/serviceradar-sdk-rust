@@ -20,7 +20,7 @@ use crate::error::{
     HOST_ERR_TOO_LARGE, SdkResult,
 };
 use crate::host::{self, HostBackend};
-use crate::{CredentialBrokerGrant, HttpRequest, HttpResponse};
+use crate::{CredentialBrokerGrant, HttpRequest, HttpResponse, HttpTlsInfo, HttpTrace};
 
 mod credentials;
 mod grpc;
@@ -335,6 +335,8 @@ struct LocalHttpRequestPayload {
     timeout_ms: u32,
     #[serde(default)]
     insecure_skip_verify: bool,
+    #[serde(default)]
+    follow_redirects: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -342,8 +344,14 @@ struct LocalHttpResponsePayload {
     status: i32,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     headers: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    set_cookies: Vec<String>,
     body_base64: String,
     body_encoding: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trace: Option<HttpTrace>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tls: Option<HttpTlsInfo>,
 }
 
 fn decode_local_http_request(payload: &[u8]) -> SdkResult<HttpRequest> {
@@ -370,6 +378,7 @@ fn decode_local_http_request(payload: &[u8]) -> SdkResult<HttpRequest> {
         response_mode: payload.response_mode,
         timeout_ms: payload.timeout_ms,
         insecure_skip_verify: payload.insecure_skip_verify,
+        follow_redirects: payload.follow_redirects,
     })
 }
 
@@ -383,8 +392,11 @@ fn encode_local_http_response(response: &HttpResponse) -> serde_json::Result<Vec
     serde_json::to_vec(&LocalHttpResponsePayload {
         status: response.status,
         headers: response.headers.clone(),
+        set_cookies: response.set_cookies.clone(),
         body_base64: base64::engine::general_purpose::STANDARD.encode(&response.body),
         body_encoding: "base64",
+        trace: response.trace.clone(),
+        tls: response.tls.clone(),
     })
 }
 
