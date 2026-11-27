@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use crate::error::{HOST_ERR_TOO_LARGE, HostError, SdkResult};
 use crate::host;
 
-pub const MAX_HTTP_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_HTTP_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 /// Host response encoding that returns a decimal status line followed by the raw
 /// body. Response headers are dropped. It is the default, and hosts that do not

@@ -174,6 +174,9 @@ encoder so wasm plugins do not need to link a full protobuf runtime. If a plugin
 already has encoded protobuf bytes from another generator, use
 `TelemetryRecord::serviceradar_metrics`.
 
+To emit graph-shaped external topology snapshots through the telemetry pipeline,
+use `TelemetryRecord::external_topology_v1` (payload kind `external_topology_v1`).
+
 ## HTTP response headers
 
 The default response mode, `HTTP_RESPONSE_MODE_STATUS_BODY`, returns only the
@@ -635,6 +638,6 @@ Crate publishing is automated in GitHub Actions. To publish a release:
 
 1. Update `version` in `Cargo.toml`.
 2. Push the commit to `main`.
-3. Create and push a matching tag such as `v0.1.6`.
+3. Create and push a matching tag such as `v0.1.7`.
 
 The publish workflow runs `cargo publish --locked`. Configure the GitHub repository secret `CARGO_REGISTRY_TOKEN` with a crates.io API token before using the release workflow.

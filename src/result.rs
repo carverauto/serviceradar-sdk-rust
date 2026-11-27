@@ -307,6 +307,7 @@ pub const SIGNAL_SCHEMA_SIGNAL_TYPE_LOG: &str = "log";
 pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT: &str = "ocsf_event";
 pub const SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG: &str = "otel_log";
 pub const SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS: &str = "serviceradar_metrics";
+pub const SIGNAL_SCHEMA_PAYLOAD_KIND_EXTERNAL_TOPOLOGY_V1: &str = "external_topology_v1";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SignalSchemaRef {
