@@ -3,9 +3,13 @@ use std::time::Duration;
 
 use base64::Engine;
 
+use crate::error::{Error, HOST_ERR_TOO_LARGE};
 use crate::host::{TestHostBackend, install_test_backend};
 
-use super::{HttpClient, HttpRequest, HttpRequestPayload, HttpResponse, HttpResponsePayload};
+use super::{
+    HTTP_RESPONSE_MODE_ENVELOPE, HttpClient, HttpRequest, HttpRequestPayload, HttpResponse,
+    HttpResponsePayload, MAX_HTTP_RESPONSE_BYTES,
+};
 
 struct HttpTestHost;
 
@@ -253,4 +257,79 @@ fn follow_redirects_and_envelope_waterfall_decode() {
     assert_eq!(no_leaf_tls.version, "TLS1.3");
     assert_eq!(no_leaf_tls.leaf_not_after_unix, None);
     assert_eq!(no_leaf_tls.leaf_days_remaining, None);
+}
+
+struct LargeEnvelopeHost {
+    encoded_envelope: Vec<u8>,
+}
+
+impl TestHostBackend for LargeEnvelopeHost {
+    fn http_request(&mut self, req: &[u8], resp: &mut [u8]) -> i32 {
+        let payload: serde_json::Value = serde_json::from_slice(req).expect("decode request");
+        assert_eq!(payload["response_mode"], HTTP_RESPONSE_MODE_ENVELOPE);
+        if self.encoded_envelope.len() > resp.len() {
+            return HOST_ERR_TOO_LARGE;
+        }
+        resp[..self.encoded_envelope.len()].copy_from_slice(&self.encoded_envelope);
+        self.encoded_envelope.len() as i32
+    }
+}
+
+#[test]
+fn max_http_response_bytes_is_16_mib_and_decodes_over_4_mib_envelope() {
+    assert_eq!(MAX_HTTP_RESPONSE_BYTES, 16 * 1024 * 1024);
+    assert_eq!(crate::MAX_HTTP_RESPONSE_BYTES, 16 * 1024 * 1024);
+    assert_eq!(HttpClient::default().max_response_bytes, 16 * 1024 * 1024);
+    assert_eq!(crate::HTTP.max_response_bytes, 16 * 1024 * 1024);
+
+    // 3.5 MiB raw snapshot expands to ~4.67 MiB in base64 inside the JSON envelope (> 4 MiB).
+    let raw_body = vec![b'x'; 3_500_000];
+    let envelope = HttpResponsePayload {
+        status: 200,
+        headers: BTreeMap::from([
+            ("content-type".to_string(), "application/json".to_string()),
+            ("etag".to_string(), "\"snap-v1\"".to_string()),
+        ]),
+        body_base64: base64::engine::general_purpose::STANDARD.encode(&raw_body),
+        ..HttpResponsePayload::default()
+    };
+    let encoded_envelope = serde_json::to_vec(&envelope).expect("encode large envelope");
+    assert!(
+        encoded_envelope.len() > 4 * 1024 * 1024,
+        "envelope should exceed old 4 MiB cap (got {} bytes)",
+        encoded_envelope.len()
+    );
+
+    let _guard = install_test_backend(Box::new(LargeEnvelopeHost {
+        encoded_envelope: encoded_envelope.clone(),
+    }));
+
+    let response = HttpClient::default()
+        .do_request(
+            HttpRequest::get("https://api.example.com/v1/topology/snapshot")
+                .with_response_mode(HTTP_RESPONSE_MODE_ENVELOPE),
+        )
+        .expect("decode >4 MiB envelope response with default HttpClient");
+
+    assert_eq!(response.status, 200);
+    assert_eq!(response.header("ETag"), Some("\"snap-v1\""));
+    assert_eq!(response.body.len(), raw_body.len());
+    assert_eq!(response.body, raw_body);
+
+    let small_client = HttpClient {
+        max_response_bytes: 4 * 1024 * 1024,
+    };
+    let err = small_client
+        .do_request(
+            HttpRequest::get("https://api.example.com/v1/topology/snapshot")
+                .with_response_mode(HTTP_RESPONSE_MODE_ENVELOPE),
+        )
+        .expect_err("4 MiB client should still reject >4 MiB envelope");
+    match err {
+        Error::Host(host_err) => {
+            assert_eq!(host_err.code, HOST_ERR_TOO_LARGE);
+            assert_eq!(host_err.op, "http_request");
+        }
+        other => panic!("expected HOST_ERR_TOO_LARGE, got {other:?}"),
+    }
 }

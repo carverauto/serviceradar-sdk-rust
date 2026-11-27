@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use base64::{Engine as _, engine::general_purpose};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::error::{HOST_ERR_NOT_FOUND, HOST_ERR_OK};
 use crate::host::{TestHostBackend, install_test_backend};
@@ -10,8 +11,11 @@ use crate::metric_envelope::{
 };
 use crate::result::{
     OcsfEvent, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT, SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG,
-    SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS, SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity,
-    SignalSchemaRef,
+    SIGNAL_SCHEMA_SIGNAL_TYPE_EVENT, Severity, SignalSchemaRef,
+};
+use crate::{
+    SIGNAL_SCHEMA_PAYLOAD_KIND_EXTERNAL_TOPOLOGY_V1,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS,
 };
 
 use super::{TelemetryBatch, TelemetryRecord, TelemetrySource, emit_telemetry};
@@ -177,4 +181,121 @@ fn metric_batch_record_serializes_dependency_free_metric_proto_payload() {
             .any(|window| window == b"plugin.camera_total"),
         "metric name missing from protobuf payload"
     );
+}
+
+#[derive(Default)]
+struct RecordingTelemetryHost {
+    payloads: Arc<Mutex<Vec<Vec<u8>>>>,
+}
+
+impl TestHostBackend for RecordingTelemetryHost {
+    fn emit_telemetry(&mut self, payload: &[u8]) -> i32 {
+        self.payloads
+            .lock()
+            .expect("recording telemetry mutex")
+            .push(payload.to_vec());
+        HOST_ERR_OK
+    }
+}
+
+#[test]
+fn crate_root_reexports_telemetry_payload_kind_constants() {
+    assert_eq!(
+        SIGNAL_SCHEMA_PAYLOAD_KIND_EXTERNAL_TOPOLOGY_V1,
+        "external_topology_v1"
+    );
+    assert_eq!(
+        SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS,
+        "serviceradar_metrics"
+    );
+}
+
+#[test]
+fn external_topology_v1_record_serializes_json_snapshot_payload() {
+    let snapshot = json!({
+        "schema_version": 1,
+        "snapshot_id": "snap-0001",
+        "nodes": [
+            {
+                "id": "ext:asn:64512",
+                "kind": "asn",
+                "asn": 64512,
+                "name": "Example Transit"
+            },
+            {
+                "id": "ext:ixp:example-ix",
+                "kind": "ixp",
+                "port_speed_mbps": 100000
+            }
+        ],
+        "edges": [
+            {
+                "source": "ext:asn:64512",
+                "target": "ext:ixp:example-ix",
+                "kind": "ixp_member",
+                "port_speed_mbps": 100000
+            }
+        ]
+    });
+
+    let record = TelemetryRecord::external_topology_v1("topo-1", &snapshot)
+        .expect("build external_topology_v1 telemetry record");
+
+    assert_eq!(record.event_id.as_deref(), Some("topo-1"));
+    assert!(record.observed_time_unix_nano.is_some());
+    assert_eq!(record.observed_time_unix_nano, record.event_time_unix_nano);
+    assert_eq!(
+        record.payload_kind,
+        SIGNAL_SCHEMA_PAYLOAD_KIND_EXTERNAL_TOPOLOGY_V1
+    );
+    assert!(record.metadata.is_empty());
+    assert_eq!(record.payload, snapshot);
+
+    let batch_bytes = TelemetryBatch::new(vec![record])
+        .with_source(TelemetrySource::new("horizon-feed", "default"))
+        .serialize()
+        .expect("serialize telemetry batch");
+    let decoded: Value = serde_json::from_slice(&batch_bytes).expect("decode telemetry json");
+    let encoded_record = &decoded["records"][0];
+
+    assert_eq!(encoded_record["event_id"], json!("topo-1"));
+    assert_eq!(
+        encoded_record["payload_kind"],
+        json!("external_topology_v1")
+    );
+    assert_eq!(encoded_record["payload"]["schema_version"], json!(1));
+    assert_eq!(encoded_record["payload"], snapshot);
+    assert!(encoded_record.get("metadata").is_none());
+}
+
+#[test]
+fn external_topology_v1_omits_empty_event_id_and_emits_to_host() {
+    let snapshot = json!({
+        "schema_version": 1,
+        "nodes": [{ "id": "ext:vantage:pop-1", "kind": "vantage" }],
+        "edges": []
+    });
+
+    let record = TelemetryRecord::external_topology_v1("", &snapshot)
+        .expect("build external_topology_v1 with empty event_id");
+    assert_eq!(record.event_id, None);
+
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let _guard = install_test_backend(Box::new(RecordingTelemetryHost {
+        payloads: Arc::clone(&captured),
+    }));
+
+    emit_telemetry(
+        TelemetryBatch::new(vec![record])
+            .with_source(TelemetrySource::new("horizon-feed", "pop-1")),
+    )
+    .expect("emit external_topology_v1 telemetry through host");
+
+    let payloads = captured.lock().expect("captured payloads mutex");
+    assert_eq!(payloads.len(), 1);
+    let decoded: Value = serde_json::from_slice(&payloads[0]).expect("decode captured batch");
+    let emitted = &decoded["records"][0];
+    assert!(emitted.get("event_id").is_none());
+    assert_eq!(emitted["payload_kind"], json!("external_topology_v1"));
+    assert_eq!(emitted["payload"], snapshot);
 }

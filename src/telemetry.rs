@@ -13,9 +13,9 @@ use crate::result::{
     SIGNAL_SCHEMA_METADATA_DISPLAY_CONTRACT_VERSION, SIGNAL_SCHEMA_METADATA_PAYLOAD_KIND,
     SIGNAL_SCHEMA_METADATA_PRODUCER_ID, SIGNAL_SCHEMA_METADATA_PRODUCER_VERSION,
     SIGNAL_SCHEMA_METADATA_SCHEMA_ID, SIGNAL_SCHEMA_METADATA_SCHEMA_VERSION,
-    SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE, SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT,
-    SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG, SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS,
-    SignalSchemaRef,
+    SIGNAL_SCHEMA_METADATA_SIGNAL_TYPE, SIGNAL_SCHEMA_PAYLOAD_KIND_EXTERNAL_TOPOLOGY_V1,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_OCSF_EVENT, SIGNAL_SCHEMA_PAYLOAD_KIND_OTEL_LOG,
+    SIGNAL_SCHEMA_PAYLOAD_KIND_SERVICERADAR_METRICS, SignalSchemaRef,
 };
 
 const TELEMETRY_METADATA_PREFIX: &str = "serviceradar.signal_schema.";
@@ -107,6 +107,22 @@ impl TelemetryRecord {
             batch.emitted_at_unix_nano = now_unix_nanos() as u64;
         }
         Self::serviceradar_metrics(event_id, &marshal_metric_batch(batch))
+    }
+
+    pub fn external_topology_v1(
+        event_id: impl Into<String>,
+        snapshot: impl Serialize,
+    ) -> SdkResult<Self> {
+        let now = now_unix_nanos();
+
+        Ok(Self {
+            event_id: empty_string_to_none(event_id.into()),
+            observed_time_unix_nano: Some(now),
+            event_time_unix_nano: Some(now),
+            payload_kind: SIGNAL_SCHEMA_PAYLOAD_KIND_EXTERNAL_TOPOLOGY_V1.to_string(),
+            payload: serde_json::to_value(snapshot)?,
+            metadata: BTreeMap::new(),
+        })
     }
 
     pub fn attach_signal_schema_ref(&mut self, signal_schema: &SignalSchemaRef) {
